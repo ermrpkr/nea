@@ -9,6 +9,17 @@ SECRET_KEY = config('SECRET_KEY', default='nea-loss-system-secret-key-change-in-
 DEBUG = config('DEBUG', default=False, cast=bool)
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='*', cast=Csv())
 
+# ── Database (Fixed for Railway) ──────────────────────────────────────────────
+import dj_database_url
+
+DATABASES = {
+    'default': dj_database_url.config(
+        default=os.environ.get('DATABASE_URL') or config('DATABASE_URL', default=None),
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
+}
+
 # ── Apps ──────────────────────────────────────────────────────────────────────
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -20,9 +31,10 @@ INSTALLED_APPS = [
     'nea_loss',
 ]
 
+# ── Middleware ────────────────────────────────────────────────────────────────
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',   # serves static files on Railway
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -32,7 +44,9 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = 'nea_project.urls'
+WSGI_APPLICATION = 'nea_project.wsgi.application'
 
+# ── Templates ─────────────────────────────────────────────────────────────────
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
@@ -50,46 +64,6 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'nea_project.wsgi.application'
-
-# ── Database ──────────────────────────────────────────────────────────────────
-# Railway automatically provides DATABASE_URL environment variable.
-# If DATABASE_URL is set, use it directly.  Otherwise fall back to individual vars.
-DATABASE_URL = config('DATABASE_URL', default=None)
-
-if DATABASE_URL:
-    # Parse Railway's DATABASE_URL (postgres://user:pass@host:port/dbname)
-    import urllib.parse as urlparse
-    url = urlparse.urlparse(DATABASE_URL)
-    DATABASES = {
-        'default': {
-            'ENGINE':   'django.db.backends.postgresql',
-            'NAME':     url.path.lstrip('/'),
-            'USER':     url.username,
-            'PASSWORD': url.password,
-            'HOST':     url.hostname,
-            'PORT':     str(url.port or 5432),
-        }
-    }
-elif config('DB_ENGINE', default='postgresql') == 'sqlite3':
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
-    }
-else:
-    DATABASES = {
-        'default': {
-            'ENGINE':   'django.db.backends.postgresql',
-            'NAME':     config('DB_NAME',     default='nea_loss_system'),
-            'USER':     config('DB_USER',     default='postgres'),
-            'PASSWORD': config('DB_PASSWORD', default=''),
-            'HOST':     config('DB_HOST',     default='localhost'),
-            'PORT':     config('DB_PORT',     default='5432'),
-        }
-    }
-
 # ── Auth ──────────────────────────────────────────────────────────────────────
 AUTH_PASSWORD_VALIDATORS = []
 AUTH_USER_MODEL = 'nea_loss.NEAUser'
@@ -100,21 +74,23 @@ TIME_ZONE = 'Asia/Kathmandu'
 USE_I18N = True
 USE_TZ = True
 
-# ── Static files (WhiteNoise serves them on Railway) ─────────────────────────
+# ── Static & Media Files ──────────────────────────────────────────────────────
 STATIC_URL = '/static/'
-STATICFILES_DIRS = []
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# ── Default Auto Field ────────────────────────────────────────────────────────
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# ── Login Redirects ───────────────────────────────────────────────────────────
 LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/dashboard/'
 LOGOUT_REDIRECT_URL = '/login/'
 
+# Custom Nepali Months
 NEPALI_MONTHS = [
     'Shrawan', 'Bhadra', 'Ashwin', 'Kartik',
     'Mangsir', 'Poush', 'Magh', 'Falgun',
