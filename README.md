@@ -8,14 +8,11 @@ Nepal Electricity Authority | Distribution Loss Report Management System
 
 ### 1. System Admin — Separate User (NOT the MD)
 - New role: `SYS_ADMIN` — a system engineer who controls everything
-- Login: `sysadmin / nea@admin123`
 - Has full access to Django Admin panel at `/admin/`
 - Can manage: Users, Organizations, Fiscal Years, Meter Points, Consumer Categories, all Reports
 - **The MD is no longer the system admin** — MD is a separate view-only role
 
 ### 2. MD and DMD — Different Users, Same Rights
-- MD login:  `md_user / nea@2024`
-- DMD login: `dmd_user / nea@2024`
 - Both have **identical navigation and permissions** (view-only)
 - **"New Report" button removed** — they cannot create reports
 - They can VIEW:
@@ -27,13 +24,11 @@ Nepal Electricity Authority | Distribution Loss Report Management System
 
 ### 3. Provincial Office — Create Monthly Report (auto-generated)
 - **"New Report" button removed** — replaced with **"Create Monthly Report"**
-- Login: `prov_kvdd / nea@2024`
 - The monthly report is **auto-generated from DC reports** under that office
 - Matches the provincial.xlsx format: S.N., DC Name, Received kWh, Utilised kWh, I.L.%, C.L.%, Total YTD, Target F.Y.
 - Provincial manager can still review, approve, and reject DC reports
 
 ### 4. DC Staff — Unchanged
-- Login: `dc_ktm / nea@2024` (Kathmandu), `dc_lpr / nea@2024` (Lalitpur), etc.
 - Can create and submit monthly loss reports as before
 
 ---
@@ -63,23 +58,6 @@ chmod +x start_linux_mac.sh
 .venv/bin/python manage.py seed_data            # Linux/Mac
 .venv/bin/python manage.py runserver            # Linux/Mac
 ```
-
----
-
-## LOGIN CREDENTIALS
-
-| Username    | Password      | Role                        | Access Level              |
-|-------------|---------------|-----------------------------|---------------------------|
-| `sysadmin`  | `nea@admin123`| System Administrator        | Full system control       |
-| `md_user`   | `nea@2024`    | Managing Director           | View-only (reports/analytics) |
-| `dmd_user`  | `nea@2024`    | Deputy Managing Director    | View-only (reports/analytics) |
-| `prov_kvdd` | `nea@2024`    | Provincial Manager (KVDD)   | DC review + Prov. reports |
-| `dc_ktm`    | `nea@2024`    | DC Staff (Kathmandu DC)     | Create & submit reports   |
-| `dc_lpr`    | `nea@2024`    | DC Staff (Lalitpur DC)      | Create & submit reports   |
-| `dc_nuw`    | `nea@2024`    | DC Staff (Nuwakot DC)       | Create & submit reports   |
-| `dc_pkr`    | `nea@2024`    | DC Staff (Pokhara DC)       | Create & submit reports   |
-
-**Django Admin Panel:** http://127.0.0.1:8000/admin/ (login with sysadmin / nea@admin123)
 
 ---
 

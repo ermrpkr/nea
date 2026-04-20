@@ -1,14 +1,14 @@
 """
 NEA Loss Analysis System - Seed Data
-Creates all demo users with correct roles:
-  sysadmin / nea@admin123  → System Administrator (full control, not MD)
-  md_user  / nea@2024      → Managing Director    (view only)
-  dmd_user / nea@2024      → Deputy Managing Director (view only)
-  prov_kvdd / nea@2024     → Provincial Manager KVDD
-  dc_ktm   / nea@2024      → DC Staff Kathmandu
-  dc_nuw   / nea@2024      → DC Staff Nuwakot
-  dc_lpr   / nea@2024      → DC Staff Lalitpur
-  dc_pkr   / nea@2024      → DC Staff Pokhara
+Creates all users with correct roles:
+  sysadmin  → System Administrator (full control, not MD)
+  md_user   → Managing Director    (view only)
+  dmd_user  → Deputy Managing Director (view only)
+  prov_kvdd → Provincial Manager KVDD
+  dc_ktm    → DC Staff Kathmandu
+  dc_nuw    → DC Staff Nuwakot
+  dc_lpr    → DC Staff Lalitpur
+  dc_pkr   → DC Staff Pokhara
 """
 from django.core.management.base import BaseCommand
 from django.utils import timezone
@@ -317,14 +317,14 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS('\n[OK] Seeding complete!'))
         self.stdout.write('')
         self.stdout.write('=' * 56)
-        self.stdout.write('LOGIN CREDENTIALS:')
+        self.stdout.write('USERS CREATED:')
         self.stdout.write('=' * 56)
-        self.stdout.write('  sysadmin   / nea@admin123  -> System Administrator')
-        self.stdout.write('  md_user    / nea@2024      -> Managing Director')
-        self.stdout.write('  dmd_user   / nea@2024      -> Deputy Managing Director')
-        self.stdout.write('  prov_kvdd  / nea@2024      -> Provincial Manager (KVDD)')
-        self.stdout.write('  dc_ktm     / nea@2024      -> DC Staff (Kathmandu DC)')
-        self.stdout.write('  dc_nuw     / nea@2024      -> DC Staff (Nuwakot DC)')
-        self.stdout.write('  dc_lpr     / nea@2024      -> DC Staff (Lalitpur DC)')
-        self.stdout.write('  dc_pkr     / nea@2024      -> DC Staff (Pokhara DC)')
+        self.stdout.write('  sysadmin   -> System Administrator')
+        self.stdout.write('  md_user    -> Managing Director')
+        self.stdout.write('  dmd_user   -> Deputy Managing Director')
+        self.stdout.write('  prov_kvdd  -> Provincial Manager (KVDD)')
+        self.stdout.write('  dc_ktm     -> DC Staff (Kathmandu DC)')
+        self.stdout.write('  dc_nuw     -> DC Staff (Nuwakot DC)')
+        self.stdout.write('  dc_lpr     -> DC Staff (Lalitpur DC)')
+        self.stdout.write('  dc_pkr     -> DC Staff (Pokhara DC)')
         self.stdout.write('=' * 56)
