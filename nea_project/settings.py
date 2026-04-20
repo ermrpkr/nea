@@ -1,20 +1,27 @@
 from pathlib import Path
 import os
 from decouple import config, Csv
+import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # ── Security ──────────────────────────────────────────────────────────────────
 SECRET_KEY = config('SECRET_KEY', default='nea-loss-system-secret-key-change-in-production-xyz123abc')
+
+# Better for production (use environment variable on Railway)
 DEBUG = config('DEBUG', default=False, cast=bool)
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='*', cast=Csv())
 
-# ── Database (Fixed for Railway) ──────────────────────────────────────────────
-import dj_database_url
+# Recommended for Railway (more secure than '*')
+ALLOWED_HOSTS = config(
+    'ALLOWED_HOSTS',
+    default='localhost,127.0.0.1,.up.railway.app',
+    cast=Csv()
+)
 
+# ── Database (Good for Railway) ──────────────────────────────────────────────
 DATABASES = {
     'default': dj_database_url.config(
-        default=os.environ.get('DATABASE_URL') or config('DATABASE_URL', default=None),
+        default=os.environ.get('DATABASE_URL'),
         conn_max_age=600,
         conn_health_checks=True,
     )
@@ -29,12 +36,13 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'nea_loss',
+    'whitenoise.runserver_nostatic',   # ← Add this (helps in development too)
 ]
 
 # ── Middleware ────────────────────────────────────────────────────────────────
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',   # ← Must be right after SecurityMiddleware
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -77,6 +85,8 @@ USE_TZ = True
 # ── Static & Media Files ──────────────────────────────────────────────────────
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# WhiteNoise configuration (very important for Railway)
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 MEDIA_URL = '/media/'
@@ -96,3 +106,10 @@ NEPALI_MONTHS = [
     'Mangsir', 'Poush', 'Magh', 'Falgun',
     'Chaitra', 'Baisakh', 'Jestha', 'Ashadh'
 ]
+
+# Optional: Add this for better security on Railway
+CSRF_TRUSTED_ORIGINS = config(
+    'CSRF_TRUSTED_ORIGINS',
+    default='https://*.up.railway.app',
+    cast=Csv()
+)
