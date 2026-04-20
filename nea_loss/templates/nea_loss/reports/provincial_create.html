@@ -1,0 +1,288 @@
+{% extends 'nea_loss/base.html' %}
+{% load nea_filters %}
+{% block title %}Create Provincial Report — NEA{% endblock %}
+{% block page_title %}Create Monthly Provincial Report{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; Provincial Report &rsaquo; Create{% endblock %}
+
+{% block content %}
+<div class="alert alert-info mb-24" style="display:flex;align-items:center;gap:10px;">
+  <i class="fas fa-magic fa-lg"></i>
+  <span>
+    Select a <strong>Fiscal Year</strong> and <strong>Provincial Office</strong>.
+    Choose <strong>"Report Till Now"</strong> to see all months with data from Shrawan to latest.
+    Or choose a specific month to see only that month.
+  </span>
+</div>
+
+<div class="card mb-24">
+  <div class="card-header">
+    <h2><i class="fas fa-filter" style="color:var(--nea-blue);margin-right:6px;"></i> Generate Report</h2>
+  </div>
+  <div class="card-body">
+    <form method="POST">
+      {% csrf_token %}
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:16px;align-items:flex-end;">
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Fiscal Year *</label>
+          <select name="fiscal_year" class="form-control" required>
+            <option value="">-- Select FY --</option>
+            {% for fy in fiscal_years %}
+            <option value="{{ fy.pk }}" {% if selected_fy and selected_fy.pk == fy.pk %}selected{% endif %}>
+              {{ fy.year_bs }}{% if fy.is_active %} (Active){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Provincial Office *</label>
+          <select name="provincial_office" class="form-control" required>
+            <option value="">-- Select Office --</option>
+            {% for po in provincial_offices %}
+            <option value="{{ po.pk }}" {% if selected_po and selected_po.pk == po.pk %}selected{% endif %}>{{ po.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Month *</label>
+          <select name="month" class="form-control" required>
+            <option value="0" {% if selected_month == 0 %}selected{% endif %}>
+              Report Till Now (all available months)
+            </option>
+            {% for num, name in months_list %}
+            <option value="{{ num }}" {% if selected_month == num %}selected{% endif %}>{{ name }} only</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;padding-bottom:16px;">
+          <button type="submit" name="action" value="preview" class="btn btn-primary">
+            <i class="fas fa-eye"></i> Create Report
+          </button>
+          {% if report_data and not show_all %}
+          <button type="submit" name="action" value="save" class="btn btn-success btn-sm">
+            <i class="fas fa-save"></i> Save
+          </button>
+          {% endif %}
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if report_data %}
+<div class="card" id="provincial-report">
+  <div style="background:linear-gradient(135deg,#1B4F72,#2E86C1);color:white;padding:20px;text-align:center;border-radius:12px 12px 0 0;">
+    <div style="font-size:12px;opacity:0.8;margin-bottom:4px;font-weight:500;letter-spacing:0.5px;">Nepal Electricity Authority</div>
+    <div style="font-size:16px;font-weight:700;margin-bottom:2px;">Distribution and Consumer Services Directorate</div>
+    <div style="font-size:14px;font-weight:600;margin-bottom:6px;">{{ selected_po.name }}</div>
+    <div style="font-size:12px;opacity:0.75;">
+      Statement of Distribution Loss — F/Y {{ selected_fy.year_bs }}
+      {% if show_all %} — Shrawan to {{ months_range|last|get_month_name }}{% else %} — {{ selected_month_name }} only{% endif %}
+    </div>
+    <div style="font-size:11px;opacity:0.6;margin-top:4px;">NEA Overall Target: {{ nea_target_pct }}%</div>
+  </div>
+
+  <!-- Summary strip -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--border-color);">
+    <div style="padding:14px 20px;border-right:1px solid var(--border-color);text-align:center;">
+      <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">DCs Covered</div>
+      <div style="font-size:22px;font-weight:800;color:var(--nea-blue);">{{ report_data|length }}</div>
+    </div>
+    <div style="padding:14px 20px;border-right:1px solid var(--border-color);text-align:center;">
+      <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Total Received (kWh)</div>
+      <div style="font-size:20px;font-weight:800;color:var(--nea-blue);">{{ grand_total_received|floatformat:2 }}</div>
+    </div>
+    <div style="padding:14px 20px;border-right:1px solid var(--border-color);text-align:center;">
+      <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Total Utilised (kWh)</div>
+      <div style="font-size:20px;font-weight:800;color:var(--nea-green);">{{ grand_total_utilised|floatformat:2 }}</div>
+    </div>
+    
+    <div style="padding:14px 20px;text-align:center;">
+      <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">
+        {% if show_all %}Cumulative{% else %}Monthly{% endif %} Loss %
+      </div>
+      <div style="font-size:22px;font-weight:800;color:{% if grand_il > nea_target_pct %}var(--nea-red){% else %}var(--nea-green){% endif %};">
+        {{ grand_il }}%
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);">Target: {{ nea_target_pct }}%</div>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:700px;">
+      <thead>
+        <tr style="background:#0A1628;color:white;">
+          <th style="padding:10px 12px;border:1px solid #2c3e50;text-align:center;width:40px;">S.N.</th>
+          <th style="padding:10px 12px;border:1px solid #2c3e50;text-align:left;min-width:160px;">Distribution Centre</th>
+          <th style="padding:10px 12px;border:1px solid #2c3e50;text-align:left;width:100px;">Description</th>
+          {% for mn in months_range %}
+          <th style="padding:10px 8px;border:1px solid #2c3e50;text-align:center;min-width:90px;">{{ month_names|get_item:mn }}</th>
+          {% endfor %}
+          {% if show_all %}
+          <th style="padding:10px 12px;border:1px solid #2c3e50;text-align:center;min-width:90px;background:#1a3a5c;">YTD Total</th>
+          {% endif %}
+          <th style="padding:10px 12px;border:1px solid #2c3e50;text-align:center;min-width:80px;background:#B7770D;">Target F.Y.</th>
+        </tr>
+      </thead>
+      <tbody>
+
+        <!-- Grand Total rows (month-wise sums computed by JS) -->
+        <tr style="background:#EBF5FB;font-weight:700;">
+          <td style="padding:8px 12px;border:1px solid #dce6f0;text-align:center;">A</td>
+          <td style="padding:8px 12px;border:1px solid #dce6f0;color:#1B4F72;">Grand Total — {{ selected_po.name }}</td>
+          <td style="padding:8px 12px;border:1px solid #dce6f0;color:var(--text-secondary);">Received kWh</td>
+          {% for mn in months_range %}
+          <td style="padding:8px 10px;border:1px solid #dce6f0;text-align:right;font-variant-numeric:tabular-nums;">
+            <span class="grand-recv-{{ mn }}">—</span>
+          </td>
+          {% endfor %}
+          {% if show_all %}<td style="padding:8px 12px;border:1px solid #dce6f0;text-align:right;font-weight:700;">{{ grand_total_received|floatformat:2 }}</td>{% endif %}
+          <td style="padding:8px 12px;border:1px solid #dce6f0;text-align:center;color:#B7770D;font-style:italic;">Provincial</td>
+        </tr>
+
+        <tr style="background:#EBF5FB;">
+          <td style="border:1px solid #dce6f0;"></td><td style="border:1px solid #dce6f0;"></td>
+          <td style="padding:8px 12px;border:1px solid #dce6f0;color:var(--text-secondary);">Utilised kWh</td>
+          {% for mn in months_range %}
+          <td style="padding:8px 10px;border:1px solid #dce6f0;text-align:right;font-variant-numeric:tabular-nums;">
+            <span class="grand-util-{{ mn }}">—</span>
+          </td>
+          {% endfor %}
+          {% if show_all %}<td style="padding:8px 12px;border:1px solid #dce6f0;text-align:right;font-weight:700;">{{ grand_total_utilised|floatformat:2 }}</td>{% endif %}
+          <td style="border:1px solid #dce6f0;"></td>
+        </tr>
+
+        <tr style="background:#EBF5FB;">
+          <td style="border:1px solid #dce6f0;"></td><td style="border:1px solid #dce6f0;"></td>
+          <td style="padding:8px 12px;border:1px solid #dce6f0;color:var(--text-secondary);">{% if show_all %}C.L.{% else %}I.L.{% endif %} %</td>
+          {% for mn in months_range %}
+          <td style="padding:8px 10px;border:1px solid #dce6f0;text-align:right;font-weight:800;">
+            <span class="grand-il-{{ mn }}">—</span>
+          </td>
+          {% endfor %}
+          <td style="padding:8px 12px;border:1px solid #dce6f0;text-align:right;font-weight:800;color:{% if grand_il > nea_target_pct %}#C0392B{% else %}#1E8449{% endif %};">{{ grand_il }}%</td>
+          <td style="border:1px solid #dce6f0;"></td>
+        </tr>
+
+        {% for row in report_data %}
+        <!-- Received row -->
+        <tr {% if forloop.even %}style="background:#FAFBFC;"{% endif %}>
+          <td style="padding:8px 12px;border:1px solid #dce6f0;text-align:center;color:#718096;font-size:11px;">{{ forloop.counter }}</td>
+          <td style="padding:8px 12px;border:1px solid #dce6f0;font-weight:600;">{{ row.dc.name }}<div style="font-size:10px;color:#718096;">{{ row.dc.code }}</div></td>
+          <td style="padding:8px 12px;border:1px solid #dce6f0;color:#4A5568;">Received kWh</td>
+          {% for mn in months_range %}
+          <td style="padding:8px 10px;border:1px solid #dce6f0;text-align:right;font-variant-numeric:tabular-nums;">
+            {% if row.monthly_breakdown|get_item:mn %}{{ row.monthly_breakdown|get_item:mn|get_key:"received"|floatformat:2 }}{% else %}<span style="color:#CBD5E0;">—</span>{% endif %}
+          </td>
+          {% endfor %}
+          {% if show_all %}<td style="padding:8px 12px;border:1px solid #dce6f0;text-align:right;font-weight:700;">{{ row.ytd_received|floatformat:2 }}</td>{% endif %}
+          <td style="padding:8px 12px;border:1px solid #dce6f0;text-align:center;font-weight:700;{% if row.dc_target %}color:#B7770D;{% else %}color:#CBD5E0;{% endif %}">
+            {% if row.dc_target %}{{ row.dc_target }}%{% else %}<span style="font-size:10px;font-weight:400;">Not set</span>{% endif %}
+          </td>
+        </tr>
+        <!-- Utilised row -->
+        <tr {% if forloop.even %}style="background:#FAFBFC;"{% endif %}>
+          <td style="border:1px solid #dce6f0;"></td><td style="border:1px solid #dce6f0;"></td>
+          <td style="padding:8px 12px;border:1px solid #dce6f0;color:#4A5568;">Utilised kWh</td>
+          {% for mn in months_range %}
+          <td style="padding:8px 10px;border:1px solid #dce6f0;text-align:right;font-variant-numeric:tabular-nums;">
+            {% if row.monthly_breakdown|get_item:mn %}{{ row.monthly_breakdown|get_item:mn|get_key:"utilised"|floatformat:2 }}{% else %}<span style="color:#CBD5E0;">—</span>{% endif %}
+          </td>
+          {% endfor %}
+          {% if show_all %}<td style="padding:8px 12px;border:1px solid #dce6f0;text-align:right;font-weight:600;">{{ row.ytd_utilised|floatformat:2 }}</td>{% endif %}
+          <td style="border:1px solid #dce6f0;"></td>
+        </tr>
+        <!-- I.L. % row -->
+        <tr style="background:#FFF8F8;">
+          <td style="border:1px solid #dce6f0;"></td><td style="border:1px solid #dce6f0;"></td>
+          <td style="padding:8px 12px;border:1px solid #dce6f0;color:#4A5568;">I.L. %</td>
+          {% for mn in months_range %}
+          <td style="padding:8px 10px;border:1px solid #dce6f0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;
+              {% if row.monthly_breakdown|get_item:mn %}{% with il=row.monthly_breakdown|get_item:mn|get_key:"monthly_il" %}{% if row.dc_target and il > row.dc_target %}color:#C0392B;{% elif row.dc_target %}color:#1E8449;{% else %}color:#2E86C1;{% endif %}{% endwith %}{% endif %}">
+            {% if row.monthly_breakdown|get_item:mn %}{{ row.monthly_breakdown|get_item:mn|get_key:"monthly_il"|floatformat:4 }}%{% else %}<span style="color:#CBD5E0;">—</span>{% endif %}
+          </td>
+          {% endfor %}
+          
+          <td style="border:1px solid #dce6f0;"></td>
+        </tr>
+        <!-- C.L. % row -->
+        <tr style="background:#F0F9FF;">
+          <td style="border:1px solid #dce6f0;"></td><td style="border:1px solid #dce6f0;"></td>
+          <td style="padding:8px 12px;border:1px solid #dce6f0;color:#1B4F72;font-weight:600;">C.L. % (YTD)</td>
+          {% for mn in months_range %}<td style="border:1px solid #dce6f0;"></td>{% endfor %}
+          <td style="padding:8px 12px;border:1px solid #dce6f0;text-align:right;font-weight:800;color:{% if row.dc_target and row.ytd_cl > row.dc_target %}#C0392B{% elif row.dc_target %}#1E8449{% else %}#1B4F72{% endif %};">
+            {{ row.ytd_cl|floatformat:4 }}%
+          </td>
+          <td style="border:1px solid #dce6f0;"></td>
+        </tr>
+        {% endfor %}
+
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Action bar -->
+  <div style="padding:16px 20px;border-top:1px solid var(--border-color);display:flex;gap:10px;justify-content:flex-end;align-items:center;background:#F8FAFC;border-radius:0 0 12px 12px;">
+    <span style="font-size:12px;color:var(--text-muted);margin-right:auto;">
+      <i class="fas fa-info-circle"></i>
+      {{ report_data|length }} DC(s) — {{ selected_po.name }}
+      {% if show_all %} — Shrawan to {{ months_range|last|get_month_name }}{% else %} — {{ selected_month_name }} only{% endif %}
+    </span>
+    <button onclick="window.print()" class="btn btn-outline btn-sm"><i class="fas fa-print"></i> Print</button>
+    {% if not show_all %}
+    <form method="POST" style="display:inline;">
+      {% csrf_token %}
+      <input type="hidden" name="fiscal_year" value="{{ selected_fy.pk }}">
+      <input type="hidden" name="provincial_office" value="{{ selected_po.pk }}">
+      <input type="hidden" name="month" value="{{ selected_month }}">
+      <button type="submit" name="action" value="save" class="btn btn-primary"><i class="fas fa-save"></i> Save Report</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+@media print {
+  body * { visibility: hidden !important; }
+  #provincial-report, #provincial-report * { visibility: visible !important; }
+  #provincial-report { position:fixed !important; top:0 !important; left:0 !important; width:100% !important; border:none !important; box-shadow:none !important; border-radius:0 !important; }
+}
+</style>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if report_data %}
+<script>
+// Fill Grand Total cells per month by summing all DCs
+(function() {
+  const nea = {{ nea_target_pct }};
+  // Build breakdown data from Django template
+  const dcBreakdowns = [
+    {% for row in report_data %}
+    {
+      {% for mn in months_range %}
+      {{ mn }}: {% if row.monthly_breakdown|get_item:mn %}{"recv": {{ row.monthly_breakdown|get_item:mn|get_key:"received"|floatformat:2 }}, "util": {{ row.monthly_breakdown|get_item:mn|get_key:"utilised"|floatformat:2 }}}{% else %}null{% endif %},
+      {% endfor %}
+    },
+    {% endfor %}
+  ];
+  const months = [{% for mn in months_range %}{{ mn }},{% endfor %}];
+
+  months.forEach(function(mn) {
+    var totR = 0, totU = 0, has = false;
+    dcBreakdowns.forEach(function(bd) { if (bd[mn]) { totR += bd[mn].recv; totU += bd[mn].util; has = true; } });
+    var il = totR > 0 ? (totR - totU) / totR * 100 : 0;
+    var col = il > nea ? '#C0392B' : '#1E8449';
+    var fmt = function(n) { return n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}); };
+    var rEl = document.querySelector('.grand-recv-' + mn);
+    var uEl = document.querySelector('.grand-util-' + mn);
+    var iEl = document.querySelector('.grand-il-' + mn);
+    if (rEl) rEl.textContent = has ? fmt(totR) : '—';
+    if (uEl) uEl.textContent = has ? fmt(totU) : '—';
+    if (iEl) { iEl.textContent = has ? il.toFixed(4) + '%' : '—'; if (has) iEl.style.color = col; }
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

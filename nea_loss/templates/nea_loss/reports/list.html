@@ -1,0 +1,166 @@
+{% extends 'nea_loss/base.html' %}
+{% load nea_filters %}
+{% block title %}All Reports — NEA{% endblock %}
+{% block page_title %}All Reports{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; All Reports{% endblock %}
+
+{% block content %}
+<!-- Filters -->
+<div class="card mb-24">
+  <div class="card-body" style="padding:16px 22px;">
+    <form method="GET" style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
+      <div class="form-group" style="margin:0; flex:1; min-width:140px;">
+        <label class="form-label">Fiscal Year</label>
+        <select name="fiscal_year" class="form-control">
+          <option value="">All Years</option>
+          {% for fy in fiscal_years %}
+          <option value="{{ fy.pk }}" {% if selected_fy == fy.pk|stringformat:'s' %}selected{% endif %}>{{ fy.year_bs }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" style="margin:0; flex:1; min-width:130px;">
+        <label class="form-label">Month</label>
+        <select name="month" class="form-control">
+          <option value="">All Months</option>
+          {% for val, label in month_choices %}
+          <option value="{{ val }}" {% if selected_month == val|stringformat:'s' %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" style="margin:0; flex:1; min-width:130px;">
+        <label class="form-label">Status</label>
+        <select name="status" class="form-control">
+          <option value="">All Status</option>
+          {% for val, label in status_choices %}
+          <option value="{{ val }}" {% if selected_status == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" style="margin:0; flex:1; min-width:140px;">
+        <label class="form-label">Distribution Center</label>
+        <select name="dc" class="form-control">
+          <option value="">All DCs</option>
+          {% for dc in distribution_centers %}
+          <option value="{{ dc.pk }}" {% if request.GET.dc == dc.pk|stringformat:'s' %}selected{% endif %}>{{ dc.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary" style="height:42px; margin-bottom:0;">
+        <i class="fas fa-search"></i> Filter
+      </button>
+      <a href="{% url 'report_list' %}" class="btn btn-outline" style="height:42px; margin-bottom:0;">
+        <i class="fas fa-times"></i> Clear
+      </a>
+    </form>
+  </div>
+</div>
+
+<!-- Header -->
+<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+  <div style="font-size:13px; color:var(--text-muted);">
+    Showing <strong>{{ reports.paginator.count }}</strong> report(s)
+  </div>
+  {% if can_create_loss_report %}
+  <a href="{% url 'report_create' %}" class="btn btn-primary">
+    <i class="fas fa-plus"></i> New Report
+  </a>
+  {% endif %}
+</div>
+
+<!-- Reports Table -->
+<div class="card">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>DC Name</th>
+          <th>Provincial Office</th>
+          <th>Fiscal Year</th>
+          <th>Month</th>
+          <th>Status</th>
+          <th class="text-right">Monthly Loss %</th>
+          <th>Date of Submission</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for report in reports %}
+        <tr>
+          <td style="color:var(--text-muted); font-size:12px;">{{ forloop.counter }}</td>
+          <td>
+            <div style="font-weight:600;">{{ report.distribution_center.name }}</div>
+            <div style="font-size:11px; color:var(--text-muted);">{{ report.distribution_center.code }}</div>
+          </td>
+          <td style="font-size:13px;">{{ report.distribution_center.provincial_office.name }}</td>
+          <td>
+            <span class="fy-badge" style="font-size:11px;">{{ report.fiscal_year.year_bs }}</span>
+          </td>
+          <td style="font-size:13px;">{{ report.get_month_display }}</td>
+          <td>
+            <span class="badge badge-{{ report.status|lower }}">
+              <i class="fas fa-circle" style="font-size:6px;"></i>
+              {{ report.get_status_display }}
+            </span>
+          </td>
+          <td class="text-right">
+            {% with pct=report.cumulative_loss_percent %}
+            <span style="font-weight:700; font-size:13px; color:{% if pct > report.fiscal_year.loss_target_percent|div:100 %}var(--nea-red){% else %}var(--nea-green){% endif %};">
+              {{ pct|multiply:100|floatformat:2 }}%
+            </span>
+            {% endwith %}
+          </td>
+          <td style="font-size:12px; color:var(--text-muted);">
+            {% if report.submission_date %}
+              {{ report.submission_date|date:"d M Y" }}
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td>
+            <div style="display:flex; gap:6px;">
+              {% if report.can_edit %}
+              <a href="{% url 'report_detail' report.pk %}" class="btn btn-outline btn-sm btn-icon" title="Edit draft">
+                <i class="fas fa-pencil-alt"></i>
+              </a>
+              {% else %}
+              <a href="{% url 'report_detail' report.pk %}" class="btn btn-outline btn-sm btn-icon" title="View">
+                <i class="fas fa-eye"></i>
+              </a>
+              {% endif %}
+              <a href="{% url 'report_print' report.pk %}" class="btn btn-outline btn-sm btn-icon" title="Print" target="_blank">
+                <i class="fas fa-print"></i>
+              </a>
+              <a href="{% url 'report_export_excel' report.pk %}" class="btn btn-outline btn-sm btn-icon" title="Export Excel">
+                <i class="fas fa-file-excel"></i>
+              </a>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="9" style="text-align:center; padding:40px; color:var(--text-muted);">
+            <i class="fas fa-folder-open" style="font-size:32px; margin-bottom:12px; display:block; opacity:0.3;"></i>
+            No reports found.{% if can_create_loss_report %} <a href="{% url 'report_create' %}">Create the first one</a>.{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if reports.has_other_pages %}
+  <div style="padding:16px 22px; border-top:1px solid var(--border-color); display:flex; justify-content:center; gap:6px;">
+    {% if reports.has_previous %}
+    <a href="?page={{ reports.previous_page_number }}&fiscal_year={{ request.GET.fiscal_year }}&month={{ request.GET.month }}&status={{ request.GET.status }}&dc={{ request.GET.dc }}&search={{ request.GET.search }}" class="btn btn-outline btn-sm">&laquo; Prev</a>
+    {% endif %}
+    {% for num in reports.paginator.page_range %}
+    <a href="?page={{ num }}&fiscal_year={{ request.GET.fiscal_year }}&month={{ request.GET.month }}&status={{ request.GET.status }}&dc={{ request.GET.dc }}&search={{ request.GET.search }}" class="btn btn-sm {% if reports.number == num %}btn-primary{% else %}btn-outline{% endif %}">{{ num }}</a>
+    {% endfor %}
+    {% if reports.has_next %}
+    <a href="?page={{ reports.next_page_number }}&fiscal_year={{ request.GET.fiscal_year }}&month={{ request.GET.month }}&status={{ request.GET.status }}&dc={{ request.GET.dc }}&search={{ request.GET.search }}" class="btn btn-outline btn-sm">Next &raquo;</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,161 @@
+{% load static %}
+{% load nea_filters %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Provincial Monthly Report — {{ provincial_office.name }} — {{ selected_fy.year_bs }}</title>
+<style>
+  @page { size: A3 landscape; margin: 12mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 10px; color: #000; background: white; }
+
+  .report-header { text-align: center; margin-bottom: 10px; }
+  .report-header .org-name { font-size: 16px; font-weight: bold; color: #1B4F72; }
+  .report-header .po-name { font-size: 13px; font-weight: bold; margin-top: 2px; }
+  .report-header .report-title { font-size: 14px; font-weight: bold; margin-top: 4px; color: #C0392B; }
+  .report-header .fy { font-size: 11px; margin-top: 2px; }
+  .report-header .target { font-size: 10px; color: #C0392B; margin-top: 2px; }
+
+  .divider { border-top: 2px solid #1B4F72; margin: 6px 0; }
+
+  table { border-collapse: collapse; width: 100%; margin-bottom: 10px; }
+  th, td { border: 0.5px solid #999; padding: 3px 5px; }
+  th { background: #D6EAF8; font-weight: bold; font-size: 9.5px; text-align: center; }
+  td { font-size: 9.5px; }
+  .section-header td { background: #1B4F72; color: white; font-weight: bold; font-size: 10px; }
+  .sub-header td { background: #EBF5FB; font-weight: bold; }
+  .total-row td { background: #D5F5E3; font-weight: bold; }
+  .loss-row td { background: #FADBD8; }
+  .num { text-align: right; }
+  .center { text-align: center; }
+  .label { text-align: left; }
+</style>
+</head>
+<body>
+
+<!-- REPORT HEADER -->
+<div class="report-header">
+  <div class="org-name">NEPAL ELECTRICITY AUTHORITY</div>
+  <div class="po-name">{{ provincial_office.name }}</div>
+  <div class="report-title">PROVINCIAL MONTHLY LOSS REPORT</div>
+  <div class="fy">FY {{ selected_fy.year_bs }}{% if selected_month %} — {{ selected_month_name }}{% endif %}</div>
+  <div class="target">NEA Target: {{ selected_fy.loss_target_percent }}%</div>
+</div>
+
+<div class="divider"></div>
+
+<!-- PROVINCIAL SUMMARY -->
+<table>
+  <thead>
+    <tr class="section-header">
+      <td colspan="{{ months|length|add:3 }}">PROVINCIAL SUMMARY — FY {{ selected_fy.year_bs }}</td>
+    </tr>
+    <tr class="sub-header">
+      <th>Description</th>
+      {% for m in months %}<th>{{ m.month_name }}</th>{% endfor %}
+      <th>Total</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="label">Total Distribution Centers</td>
+      {% for m in months %}<td class="num">{{ m.dc_count }}</td>{% endfor %}
+      <td class="num">{{ total_dcs }}</td>
+    </tr>
+    <tr>
+      <td class="label">Reports Submitted</td>
+      {% for m in months %}<td class="num">{{ m.submitted_count }}</td>{% endfor %}
+      <td class="num">{{ total_submitted }}</td>
+    </tr>
+    <tr>
+      <td class="label">Reports Not Submitted</td>
+      {% for m in months %}<td class="num">{{ m.not_submitted_count }}</td>{% endfor %}
+      <td class="num">{{ total_not_submitted }}</td>
+    </tr>
+    <tr class="loss-row">
+      <td class="label">Overall Loss Percentage</td>
+      {% for m in months %}<td class="num">{{ m.overall_loss_percent|multiply:100|floatformat:4 }}%</td>{% endfor %}
+      <td class="num">{{ overall_loss_percent|multiply:100|floatformat:4 }}%</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- DC REPORTS -->
+{% for dc_data in distribution_centers %}
+<div style="page-break-inside: avoid;">
+  <div class="divider"></div>
+  
+  <table>
+    <thead>
+      <tr class="section-header">
+        <td colspan="{{ months|length|add:3 }}">{{ dc_data.dc.name }} — {{ dc_data.dc.code }}</td>
+      </tr>
+      <tr class="sub-header">
+        <th style="width:20px;">S.No</th>
+        <th style="width:200px;">Description</th>
+        {% for m in months %}<th>{{ m.month_name }}</th>{% endfor %}
+        <th>Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- Energy Import -->
+      <tr>
+        <td colspan="2" class="label">Total Energy Import (kWh)</td>
+        {% for m in dc_data.months %}<td class="num">{{ m.total_energy_import|floatformat:2 }}</td>{% endfor %}
+        <td class="num">{{ dc_data.total_received_kwh|floatformat:2 }}</td>
+      </tr>
+      
+      <!-- Energy Export -->
+      <tr>
+        <td colspan="2" class="label">Total Energy Export (kWh)</td>
+        {% for m in dc_data.months %}<td class="num">{{ m.total_energy_export|floatformat:2 }}</td>{% endfor %}
+        <td class="num">{{ dc_data.total_export_kwh|floatformat:2|default:0 }}</td>
+      </tr>
+      
+      <!-- Net Energy Received -->
+      <tr style="background:#D6EAF8; font-weight:bold;">
+        <td colspan="2" class="label">Net Energy Received (kWh) = A − B</td>
+        {% for m in dc_data.months %}<td class="num">{{ m.net_energy_received|floatformat:2 }}</td>{% endfor %}
+        <td class="num">{{ dc_data.net_received_kwh|floatformat:2 }}</td>
+      </tr>
+      
+      <!-- Energy Utilised -->
+      <tr>
+        <td colspan="2" class="label">Total Energy Utilised (kWh)</td>
+        {% for m in dc_data.months %}<td class="num">{{ m.total_energy_utilised|floatformat:2 }}</td>{% endfor %}
+        <td class="num">{{ dc_data.total_utilised_kwh|floatformat:2 }}</td>
+      </tr>
+      
+      <!-- Loss Unit -->
+      <tr class="loss-row">
+        <td colspan="2" class="label">Loss Unit (kWh)</td>
+        {% for m in dc_data.months %}<td class="num">{{ m.loss_unit|floatformat:2 }}</td>{% endfor %}
+        <td class="num">{{ dc_data.total_loss_kwh|floatformat:2 }}</td>
+      </tr>
+      
+      <!-- Monthly Loss % -->
+      <tr>
+        <td colspan="2" class="label">Monthly Loss %</td>
+        {% for m in dc_data.months %}<td class="num">{{ m.monthly_loss_percent|multiply:100|floatformat:4 }}</td>{% endfor %}
+        <td class="num">—</td>
+      </tr>
+      
+      <!-- Cumulative Loss % -->
+      <tr style="background:#FEF9E7; font-weight:bold;">
+        <td colspan="2" class="label"><b>Cumulative Loss %</b></td>
+        {% for m in dc_data.months %}<td class="num"><b>{{ m.cumulative_loss_percent|multiply:100|floatformat:6 }}</b></td>{% endfor %}
+        <td class="num"><b>{{ dc_data.cumulative_loss_percent|multiply:100|floatformat:6 }}</b></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+{% endfor %}
+
+<!-- FOOTER -->
+<div style="text-align:center; margin-top:20px; font-size:9px; color:#666;">
+  Generated on {% now "Y-m-d H:i" %} by {{ request.user.get_full_name|default:request.user.username }}
+</div>
+
+</body>
+</html>

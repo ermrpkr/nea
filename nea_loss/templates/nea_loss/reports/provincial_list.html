@@ -1,0 +1,82 @@
+{% extends 'nea_loss/base.html' %}
+{% block title %}Provincial Reports — NEA{% endblock %}
+{% block page_title %}Provincial Reports{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; Provincial Reports{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+  <div style="font-size:13px;color:var(--text-muted);">
+    Consolidated monthly reports generated from DC data
+  </div>
+  {% if can_create_provincial_report %}
+  <a href="{% url 'provincial_report_create' %}" class="btn btn-success">
+    <i class="fas fa-magic"></i> Create Monthly Report
+  </a>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Provincial Office</th>
+          <th>Fiscal Year</th>
+          <th>Month</th>
+          <th>Status</th>
+          <th>Created By</th>
+          <th>Created At</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for report in reports %}
+        <tr>
+          <td style="color:var(--text-muted);font-size:12px;">{{ forloop.counter }}</td>
+          <td>
+            <div style="font-weight:600;">{{ report.provincial_office.name }}</div>
+            <div style="font-size:11px;color:var(--text-muted);">{{ report.provincial_office.code }}</div>
+          </td>
+          <td><span class="fy-badge" style="font-size:11px;">{{ report.fiscal_year.year_bs }}</span></td>
+          <td style="font-weight:600;">{{ report.get_month_display }}</td>
+          <td>
+            <span class="badge badge-{{ report.status|lower }}">
+              <i class="fas fa-circle" style="font-size:5px;"></i>
+              {{ report.get_status_display }}
+            </span>
+          </td>
+          <td style="font-size:12px;color:var(--text-muted);">
+            {% if report.created_by %}{{ report.created_by.full_name }}{% else %}—{% endif %}
+          </td>
+          <td style="font-size:12px;color:var(--text-muted);">
+            {% if report.created_by %}{{ report.created_at|date:"Y-m-d H:i" }}{% else %}—{% endif %}
+          </td>
+          <td>
+            <div style="display:flex;gap:6px;">
+              <a href="{% url 'provincial_report_create' %}?fy={{ report.fiscal_year.pk }}&po={{ report.provincial_office.pk }}&month={{ report.month }}"
+                 class="btn btn-outline btn-sm btn-icon" title="View / Regenerate">
+                <i class="fas fa-eye"></i>
+              </a>
+              <button onclick="window.print()" class="btn btn-outline btn-sm btn-icon" title="Print">
+                <i class="fas fa-print"></i>
+              </button>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" style="text-align:center;padding:40px;color:var(--text-muted);">
+            <i class="fas fa-folder-open" style="font-size:32px;margin-bottom:12px;display:block;opacity:0.3;"></i>
+            No provincial reports found.
+            {% if can_create_provincial_report %}
+            <a href="{% url 'provincial_report_create' %}">Create the first one</a>.
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

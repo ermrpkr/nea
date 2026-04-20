@@ -1,0 +1,588 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}NEA Loss Analysis System{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --nea-red: #C0392B;
+    --nea-red-dark: #96281B;
+    --nea-red-light: #FADBD8;
+    --nea-blue: #1B4F72;
+    --nea-blue-mid: #2E86C1;
+    --nea-blue-light: #D6EAF8;
+    --nea-green: #1E8449;
+    --nea-green-light: #D5F5E3;
+    --nea-yellow: #F39C12;
+    --nea-yellow-light: #FEF9E7;
+    --sidebar-w: 260px;
+    --sidebar-bg: #0A1628;
+    --sidebar-hover: #162A45;
+    --sidebar-active: #1B4F72;
+    --topbar-h: 64px;
+    --card-radius: 12px;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.10);
+    --shadow-lg: 0 8px 32px rgba(0,0,0,0.14);
+    --text-primary: #1A202C;
+    --text-secondary: #4A5568;
+    --text-muted: #718096;
+    --border-color: #E2E8F0;
+    --bg-page: #F0F4F8;
+    --bg-card: #FFFFFF;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--bg-page); color: var(--text-primary); }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    position: fixed; top: 0; left: 0; width: var(--sidebar-w); height: 100vh;
+    background: var(--sidebar-bg); overflow-y: auto; z-index: 100;
+    display: flex; flex-direction: column;
+    transition: transform 0.3s ease;
+  }
+  .sidebar-logo {
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .sidebar-logo-icon {
+    width: 42px; height: 42px; background: var(--nea-red);
+    border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    font-size: 20px; color: white; flex-shrink: 0;
+  }
+  .sidebar-logo-text { color: white; }
+  .sidebar-logo-text .brand { font-size: 15px; font-weight: 700; letter-spacing: 0.5px; }
+  .sidebar-logo-text .tagline { font-size: 10px; color: rgba(255,255,255,0.45); margin-top: 1px; }
+  .sidebar-user {
+    padding: 14px 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .user-avatar {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--nea-red), #E74C3C);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 600; color: white; flex-shrink: 0;
+  }
+  .user-info .name { font-size: 13px; font-weight: 500; color: white; }
+  .user-info .role { font-size: 11px; color: rgba(255,255,255,0.45); }
+  .nav-section { padding: 16px 12px 4px; }
+  .nav-section-label {
+    font-size: 10px; font-weight: 600; letter-spacing: 1px;
+    color: rgba(255,255,255,0.30); text-transform: uppercase; padding: 0 8px; margin-bottom: 6px;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px; border-radius: 8px; margin-bottom: 2px;
+    text-decoration: none; color: rgba(255,255,255,0.6);
+    font-size: 13.5px; font-weight: 400; transition: all 0.18s;
+  }
+  .nav-item:hover { background: var(--sidebar-hover); color: white; }
+  .nav-item.active { background: var(--sidebar-active); color: white; font-weight: 500; }
+  .nav-item i { width: 18px; font-size: 14px; text-align: center; flex-shrink: 0; }
+  .nav-item .badge {
+    margin-left: auto; background: var(--nea-red);
+    color: white; font-size: 10px; font-weight: 600;
+    padding: 2px 7px; border-radius: 10px; min-width: 20px; text-align: center;
+  }
+  .sidebar-footer {
+    margin-top: auto; padding: 12px;
+    border-top: 1px solid rgba(255,255,255,0.07);
+  }
+
+  /* ── TOPBAR ── */
+  .topbar {
+    position: fixed; top: 0; left: var(--sidebar-w); right: 0;
+    height: var(--topbar-h); background: white;
+    border-bottom: 1px solid var(--border-color);
+    display: flex; align-items: center; padding: 0 28px;
+    z-index: 99; gap: 16px;
+    box-shadow: var(--shadow-sm);
+  }
+  .topbar-title { flex: 1; }
+  .topbar-title h1 { font-size: 18px; font-weight: 600; color: var(--text-primary); }
+  .topbar-title .breadcrumb { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+  .topbar-actions { display: flex; align-items: center; gap: 12px; }
+  .topbar-btn {
+    width: 38px; height: 38px; border-radius: 8px; border: 1px solid var(--border-color);
+    background: white; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; position: relative; text-decoration: none; color: var(--text-secondary);
+    transition: all 0.15s;
+  }
+  .topbar-btn:hover { background: var(--bg-page); border-color: #CBD5E0; }
+  .topbar-btn .dot {
+    position: absolute; top: 6px; right: 6px; width: 8px; height: 8px;
+    background: var(--nea-red); border-radius: 50%; border: 2px solid white;
+  }
+  .fy-badge {
+    background: var(--nea-blue-light); color: var(--nea-blue);
+    font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 20px;
+  }
+
+  /* ── MAIN CONTENT ── */
+  .main-content {
+    margin-left: var(--sidebar-w);
+    padding-top: var(--topbar-h);
+    min-height: 100vh;
+  }
+  .page-body { padding: 28px; }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--bg-card); border-radius: var(--card-radius);
+    border: 1px solid var(--border-color); box-shadow: var(--shadow-sm);
+  }
+  .card-header {
+    padding: 18px 22px 14px; border-bottom: 1px solid var(--border-color);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .card-header h2 { font-size: 15px; font-weight: 600; }
+  .card-body { padding: 22px; }
+
+  /* ── STAT CARDS ── */
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .stat-card {
+    background: var(--bg-card); border-radius: var(--card-radius);
+    border: 1px solid var(--border-color); padding: 20px 22px;
+    box-shadow: var(--shadow-sm); position: relative; overflow: hidden;
+  }
+  .stat-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  }
+  .stat-card.blue::before { background: var(--nea-blue-mid); }
+  .stat-card.green::before { background: var(--nea-green); }
+  .stat-card.red::before { background: var(--nea-red); }
+  .stat-card.yellow::before { background: var(--nea-yellow); }
+  .stat-card .icon {
+    width: 44px; height: 44px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; margin-bottom: 14px;
+  }
+  .stat-card.blue .icon { background: var(--nea-blue-light); color: var(--nea-blue); }
+  .stat-card.green .icon { background: var(--nea-green-light); color: var(--nea-green); }
+  .stat-card.red .icon { background: var(--nea-red-light); color: var(--nea-red); }
+  .stat-card.yellow .icon { background: var(--nea-yellow-light); color: var(--nea-yellow); }
+  .stat-card .label { font-size: 12px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .stat-card .value { font-size: 28px; font-weight: 700; color: var(--text-primary); line-height: 1; }
+  .stat-card .sub { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+  .stat-card .trend { font-size: 12px; font-weight: 500; margin-top: 6px; }
+  .stat-card .trend.up { color: var(--nea-red); }
+  .stat-card .trend.down { color: var(--nea-green); }
+
+  /* ── TABLES ── */
+  .table-wrap { overflow-x: auto; }
+  table.data-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .data-table thead th {
+    background: #F7FAFC; font-weight: 600; font-size: 12px;
+    text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);
+    padding: 11px 16px; text-align: left; border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
+  }
+  .data-table tbody td { padding: 13px 16px; border-bottom: 1px solid #F1F5F9; }
+  .data-table tbody tr:hover { background: #FAFCFF; }
+  .data-table tbody tr:last-child td { border-bottom: none; }
+
+  /* ── BADGES / TAGS ── */
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 10px; border-radius: 20px; font-size: 11.5px; font-weight: 500;
+  }
+  .badge-draft { background: #F0F4F8; color: #4A5568; }
+  .badge-submitted { background: #EBF8FF; color: #2B6CB0; }
+  .badge-approved { background: var(--nea-green-light); color: var(--nea-green); }
+  .badge-rejected { background: var(--nea-red-light); color: var(--nea-red); }
+  .badge-reviewed { background: #FAF5FF; color: #553C9A; }
+  .badge-warning { background: var(--nea-yellow-light); color: #B7791F; }
+
+  /* ── BUTTONS ── */
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 9px 18px; border-radius: 8px; font-size: 13.5px; font-weight: 500;
+    border: none; cursor: pointer; text-decoration: none; transition: all 0.15s;
+    line-height: 1;
+  }
+  .btn-primary { background: var(--nea-blue); color: white; }
+  .btn-primary:hover { background: var(--nea-blue-mid); color: white; }
+  .btn-danger { background: var(--nea-red); color: white; }
+  .btn-danger:hover { background: var(--nea-red-dark); }
+  .btn-success { background: var(--nea-green); color: white; }
+  .btn-success:hover { opacity: 0.9; }
+  .btn-outline { background: white; color: var(--text-secondary); border: 1px solid var(--border-color); }
+  .btn-outline:hover { background: var(--bg-page); }
+  .btn-sm { padding: 6px 12px; font-size: 12.5px; }
+  .btn-icon { width: 34px; height: 34px; padding: 0; justify-content: center; }
+
+  /* ── FORMS ── */
+  .form-group { margin-bottom: 18px; }
+  .form-label { display: block; font-size: 13px; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; }
+  .form-control {
+    width: 100%; padding: 10px 14px; border: 1px solid var(--border-color);
+    border-radius: 8px; font-size: 13.5px; color: var(--text-primary);
+    background: white; transition: border-color 0.15s;
+    font-family: 'Inter', sans-serif;
+  }
+  .form-control:focus { outline: none; border-color: var(--nea-blue-mid); box-shadow: 0 0 0 3px rgba(46,134,193,0.12); }
+  .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+
+  /* ── PROGRESS ── */
+  .progress-bar-wrap { background: #E2E8F0; border-radius: 20px; height: 8px; overflow: hidden; }
+  .progress-bar { height: 100%; border-radius: 20px; transition: width 0.5s ease; }
+  .progress-bar.green { background: var(--nea-green); }
+  .progress-bar.red { background: var(--nea-red); }
+  .progress-bar.yellow { background: var(--nea-yellow); }
+
+  /* ── ALERTS ── */
+  .alert { padding: 14px 16px; border-radius: 8px; font-size: 13.5px; margin-bottom: 16px; display: flex; align-items: flex-start; gap: 10px; }
+  .alert-success { background: var(--nea-green-light); color: #155724; border-left: 4px solid var(--nea-green); }
+  .alert-warning { background: var(--nea-yellow-light); color: #856404; border-left: 4px solid var(--nea-yellow); }
+  .alert-danger { background: var(--nea-red-light); color: #721c24; border-left: 4px solid var(--nea-red); }
+  .alert-info { background: var(--nea-blue-light); color: #0c5460; border-left: 4px solid var(--nea-blue); }
+
+  /* ── LOSS GAUGE ── */
+  .loss-gauge { text-align: center; padding: 16px; }
+  .gauge-value { font-size: 38px; font-weight: 700; }
+  .gauge-value.above-target { color: var(--nea-red); }
+  .gauge-value.below-target { color: var(--nea-green); }
+
+  /* ── GRID LAYOUTS ── */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+  @media (max-width: 1100px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+
+  /* ── MISC ── */
+  .text-right { text-align: right; }
+  .text-center { text-align: center; }
+  .text-muted { color: var(--text-muted); }
+  .fw-600 { font-weight: 600; }
+  .mt-4 { margin-top: 4px; }
+  .mt-8 { margin-top: 8px; }
+  .mt-16 { margin-top: 16px; }
+  .mt-24 { margin-top: 24px; }
+  .mb-16 { margin-bottom: 16px; }
+  .mb-24 { margin-bottom: 24px; }
+  .flex { display: flex; }
+  .items-center { align-items: center; }
+  .gap-8 { gap: 8px; }
+  .gap-12 { gap: 12px; }
+  .ml-auto { margin-left: auto; }
+  .divider { height: 1px; background: var(--border-color); margin: 16px 0; }
+
+  /* ── System Admin Console ── */
+  .admin-console-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .admin-console-metric-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 18px;
+  }
+  .admin-console-metric-box {
+    background: #F7FAFC;
+    border-radius: 10px;
+    padding: 14px;
+    text-align: center;
+    border: 1px solid var(--border-color);
+  }
+  .admin-console-section-title {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    color: var(--text-secondary);
+  }
+  .admin-console-activity-table th,
+  .admin-console-activity-table td {
+    white-space: nowrap;
+  }
+  @media (max-width: 1100px) {
+    .admin-console-metric-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* PRINT */
+  @media print {
+    .sidebar, .topbar { display: none !important; }
+    .main-content { margin: 0; padding: 0; }
+  }
+</style>
+{% block extra_head %}{% endblock %}
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-icon">⚡</div>
+    <div class="sidebar-logo-text">
+      <div class="brand">NEA Loss System</div>
+      <div class="tagline">Nepal Electricity Authority</div>
+    </div>
+  </div>
+
+  {% if user.is_authenticated %}
+  <div class="sidebar-user">
+    <div class="user-avatar">{{ user.full_name|slice:":2"|upper }}</div>
+    <div class="user-info">
+      <div class="name">{{ user.full_name|truncatechars:22 }}</div>
+      <div class="role">{{ user.get_role_display }}</div>
+    </div>
+  </div>
+  {% endif %}
+
+  <nav>
+    <div class="nav-section">
+      <div class="nav-section-label">Main</div>
+      <a href="{% url 'dashboard' %}" class="nav-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+        <i class="fas fa-tachometer-alt"></i> Dashboard
+      </a>
+    </div>
+
+    {# ── SYSTEM ADMIN: full control panel ── #}
+    {% if is_system_admin %}
+    <div class="nav-section">
+      <div class="nav-section-label">Reports</div>
+      <a href="{% url 'report_list' %}" class="nav-item {% if request.resolver_match.url_name == 'report_list' %}active{% endif %}">
+        <i class="fas fa-file-alt"></i> All DC Reports
+        {% if unread_notifications_count %}<span class="badge">{{ unread_notifications_count }}</span>{% endif %}
+      </a>
+      <a href="{% url 'report_create' %}" class="nav-item {% if request.resolver_match.url_name == 'report_create' %}active{% endif %}">
+        <i class="fas fa-plus-circle"></i> New DC Report
+      </a>
+      <a href="{% url 'provincial_report_list' %}" class="nav-item {% if 'provincial' in request.resolver_match.url_name %}active{% endif %}">
+        <i class="fas fa-file-invoice"></i> Provincial Reports
+      </a>
+      <a href="{% url 'provincial_report_create' %}" class="nav-item">
+        <i class="fas fa-magic"></i> Create Prov. Report
+      </a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Analytics</div>
+      <a href="{% url 'org_overview' %}" class="nav-item {% if request.resolver_match.url_name == 'org_overview' %}active{% endif %}">
+        <i class="fas fa-sitemap"></i> Org Overview
+      </a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">System Management</div>
+      <a href="{% url 'user_list' %}" class="nav-item {% if 'user' in request.resolver_match.url_name %}active{% endif %}">
+        <i class="fas fa-users-cog"></i> User Management
+      </a>
+      <a href="/admin/" class="nav-item" target="_blank">
+        <i class="fas fa-database"></i> Django Admin Panel
+      </a>
+    </div>
+
+    {# ── MD / DMD / DIRECTOR: read-only analytics + reports ── #}
+    {% elif user.is_top_management %}
+    <div class="nav-section">
+      <div class="nav-section-label">Reports (View Only)</div>
+      <a href="{% url 'report_list' %}" class="nav-item {% if request.resolver_match.url_name == 'report_list' %}active{% endif %}">
+        <i class="fas fa-file-alt"></i> DC Reports
+        {% if unread_notifications_count %}<span class="badge">{{ unread_notifications_count }}</span>{% endif %}
+      </a>
+      <a href="{% url 'provincial_report_list' %}" class="nav-item {% if 'provincial' in request.resolver_match.url_name %}active{% endif %}">
+        <i class="fas fa-file-invoice"></i> Provincial Reports
+      </a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Organization</div>
+      <a href="{% url 'org_overview' %}" class="nav-item {% if request.resolver_match.url_name == 'org_overview' %}active{% endif %}">
+        <i class="fas fa-sitemap"></i> Org Overview
+      </a>
+    </div>
+
+    {# ── PROVINCIAL MANAGER ── #}
+    {% elif user.is_provincial %}
+    <div class="nav-section">
+      <div class="nav-section-label">Reports</div>
+      <a href="{% url 'provincial_dc_reports' %}" class="nav-item {% if request.resolver_match.url_name == 'provincial_dc_reports' %}active{% endif %}">
+        <i class="fas fa-building"></i> DC Reports
+        {% if unread_notifications_count %}<span class="badge">{{ unread_notifications_count }}</span>{% endif %}
+      </a>
+      <a href="{% url 'report_list' %}" class="nav-item {% if request.resolver_match.url_name == 'report_list' %}active{% endif %}">
+        <i class="fas fa-file-alt"></i> All Reports
+      </a>
+      <a href="{% url 'provincial_report_create' %}" class="nav-item {% if request.resolver_match.url_name == 'provincial_report_create' %}active{% endif %}" style="color:rgba(46,204,113,0.85);">
+        <i class="fas fa-magic"></i> Create Monthly Report
+      </a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Targets</div>
+      <a href="{% url 'dc_yearly_targets' %}" class="nav-item {% if request.resolver_match.url_name == 'dc_yearly_targets' %}active{% endif %}">
+        <i class="fas fa-bullseye"></i> Set DC Targets
+      </a>
+    </div>
+    {# Analytics for provincial removed — will be added later #}
+
+    {# ── DC STAFF / DC MANAGER ── #}
+    {% else %}
+    <div class="nav-section">
+      <div class="nav-section-label">Reports</div>
+      <a href="{% url 'report_list' %}" class="nav-item {% if request.resolver_match.url_name == 'report_list' %}active{% endif %}">
+        <i class="fas fa-file-alt"></i> My Reports
+        {% if unread_notifications_count %}<span class="badge">{{ unread_notifications_count }}</span>{% endif %}
+      </a>
+      <a href="{% url 'report_create' %}" class="nav-item {% if request.resolver_match.url_name == 'report_create' %}active{% endif %}">
+        <i class="fas fa-plus-circle"></i> New Report
+      </a>
+    </div>
+    {# DC Analytics removed — will be added later #}
+    {% endif %}
+  </nav>
+
+  <!-- Messages: visible to ALL roles -->
+  <div class="nav-section">
+    <div class="nav-section-label">Communicate</div>
+    <a href="{% url 'message_inbox' %}" class="nav-item {% if 'message' in request.resolver_match.url_name %}active{% endif %}">
+      <i class="fas fa-envelope"></i> Messages
+      <span id="nav-msg-badge" style="display:none;background:var(--nea-red);color:white;border-radius:10px;padding:1px 7px;font-size:10px;margin-left:auto;"></span>
+    </a>
+  </div>
+
+  <div class="sidebar-footer">
+    <a href="{% url 'profile' %}" class="nav-item">
+      <i class="fas fa-user-circle"></i> My Profile
+    </a>
+    <a href="{% url 'logout' %}" class="nav-item" style="color:rgba(220,80,80,0.8);">
+      <i class="fas fa-sign-out-alt"></i> Sign Out
+    </a>
+  </div>
+</aside>
+
+<!-- TOPBAR -->
+<header class="topbar">
+  <div class="topbar-title">
+    <h1>{% block page_title %}Dashboard{% endblock %}</h1>
+    <div class="breadcrumb">{% block breadcrumb %}NEA Loss Analysis System{% endblock %}</div>
+  </div>
+  <div class="topbar-actions">
+    {% if active_fy %}
+    <span class="fy-badge">FY {{ active_fy.year_bs }}</span>
+    {% endif %}
+    {% if can_create_loss_report and not is_provincial %}
+    <a href="{% url 'report_create' %}" class="btn btn-primary btn-sm">
+      <i class="fas fa-plus"></i> New Report
+    </a>
+    {% endif %}
+    {% if can_create_provincial_report and is_provincial %}
+    <a href="{% url 'provincial_report_create' %}" class="btn btn-primary btn-sm" style="background:var(--nea-green);">
+      <i class="fas fa-magic"></i> Create Monthly Report
+    </a>
+    {% endif %}
+    <a href="#" class="topbar-btn" id="notif-btn" title="Notifications">
+      <i class="fas fa-bell" style="font-size:15px;"></i>
+      {% if notifications|length > 0 %}<span class="dot"></span>{% endif %}
+    </a>
+    <a href="{% url 'profile' %}" class="topbar-btn">
+      <i class="fas fa-user" style="font-size:14px;"></i>
+    </a>
+  </div>
+</header>
+
+<!-- NOTIFICATION DROPDOWN -->
+<div id="notif-panel" style="
+  display:none; position:fixed; top:68px; right:20px; width:340px; z-index:200;
+  background:white; border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,0.15);
+  border:1px solid var(--border-color); overflow:hidden;">
+  <div style="padding:14px 18px 10px; border-bottom:1px solid var(--border-color); display:flex; align-items:center; justify-content:space-between;">
+    <span style="font-size:14px; font-weight:600;">Notifications</span>
+    <button onclick="markAllRead()" style="font-size:11px; color:var(--nea-blue-mid); background:none; border:none; cursor:pointer;">Mark all read</button>
+  </div>
+  <div style="max-height:320px; overflow-y:auto;">
+    {% for notif in notifications %}
+    <div style="padding:12px 18px; border-bottom:1px solid #F1F5F9; {% if not notif.is_read %}background:#FAFCFF;{% endif %}">
+      <div style="font-size:13px; font-weight:{% if not notif.is_read %}600{% else %}400{% endif %};">{{ notif.title }}</div>
+      <div style="font-size:12px; color:var(--text-muted); margin-top:3px;">{{ notif.message|truncatechars:80 }}</div>
+    </div>
+    {% empty %}
+    <div style="padding:24px; text-align:center; color:var(--text-muted); font-size:13px;">No notifications</div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- MAIN CONTENT -->
+<main class="main-content">
+  <div class="page-body">
+    {% for msg in messages %}
+    <div class="alert alert-{% if msg.tags == 'error' %}danger{% else %}{{ msg.tags }}{% endif %}">
+      <i class="fas fa-{% if msg.tags == 'success' %}check-circle{% elif msg.tags == 'error' %}exclamation-circle{% else %}info-circle{% endif %}"></i>
+      {{ msg }}
+    </div>
+    {% endfor %}
+
+    {% block content %}{% endblock %}
+  </div>
+</main>
+
+<script>
+function getCookie(name) {
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';');
+    for (let i = 0; i < cookies.length; i++) {
+      const cookie = cookies[i].trim();
+      if (cookie.substring(0, name.length + 1) === (name + '=')) {
+        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}
+
+// Use csrftoken cookie to avoid relying on template context variables.
+const csrfToken = getCookie('csrftoken') || '{{ csrf_token }}';
+
+document.getElementById('notif-btn')?.addEventListener('click', function(e) {
+  e.preventDefault();
+  const p = document.getElementById('notif-panel');
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+});
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('#notif-btn') && !e.target.closest('#notif-panel')) {
+    const p = document.getElementById('notif-panel');
+    if (p) p.style.display = 'none';
+  }
+});
+function markAllRead() {
+  fetch('{% url "api_mark_read" %}', {method:'POST', headers:{'X-CSRFToken': csrfToken}})
+    .then(r => r.json()).then(() => { document.getElementById('notif-panel').style.display='none'; location.reload(); });
+}
+
+// Format numbers with commas
+function fmtNum(n, decimals=2) {
+  return Number(n).toLocaleString('en-US', {minimumFractionDigits:decimals, maximumFractionDigits:decimals});
+}
+// Unread message badge in nav
+function updateMsgBadge() {
+  fetch('/api/messages/unread/')
+    .then(r => r.json())
+    .then(data => {
+      const badge = document.getElementById('nav-msg-badge');
+      if (badge) {
+        if (data.unread > 0) {
+          badge.textContent = data.unread;
+          badge.style.display = 'inline';
+        } else {
+          badge.style.display = 'none';
+        }
+      }
+    }).catch(() => {});
+}
+updateMsgBadge();
+setInterval(updateMsgBadge, 30000); // poll every 30s
+</script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

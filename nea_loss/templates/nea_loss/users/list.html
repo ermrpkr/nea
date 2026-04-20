@@ -1,0 +1,113 @@
+{% extends 'nea_loss/base.html' %}
+{% block title %}User Management — NEA{% endblock %}
+{% block page_title %}User Management{% endblock %}
+{% block breadcrumb %}Administration &rsaquo; Users{% endblock %}
+
+{% block content %}
+<div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:20px;">
+  <div>
+    <h2 style="margin:0; color:var(--nea-blue); font-size:1.25rem;"><i class="fas fa-users-cog" style="margin-right:8px;"></i>System users</h2>
+    <p style="margin:6px 0 0; font-size:13px; color:var(--text-muted);">Create accounts, assign roles, and link DC / provincial offices.</p>
+  </div>
+  {% if request.user.is_system_admin or request.user.is_superuser or request.user.is_staff or request.user.is_top_management %}
+  <a href="{% url 'user_create' %}" class="btn btn-primary">
+    <i class="fas fa-user-plus"></i> Add user
+  </a>
+  {% endif %}
+</div>
+
+<div class="card mb-24">
+  <div class="card-header" style="background:#F7FAFC; border-bottom:2px solid var(--nea-blue);">
+    <h2 style="color:var(--nea-blue); margin:0; font-size:1rem;">All users ({{ users|length }})</h2>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Name</th>
+          <th>Username</th>
+          <th>Role</th>
+          <th>Provincial office</th>
+          <th>Distribution center</th>
+          <th>Active</th>
+          <th style="text-align:right;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td style="color:var(--text-muted); font-size:12px;">{{ forloop.counter }}</td>
+          <td>
+            <div style="font-weight:600;">{{ u.full_name }}</div>
+            <div style="font-size:11px; color:var(--text-muted);">{{ u.email }}</div>
+          </td>
+          <td><code style="font-size:12px;">{{ u.username }}</code></td>
+          <td><span class="badge badge-primary" style="font-size:11px;">{{ u.get_role_display }}</span></td>
+          <td style="font-size:13px;">{{ u.provincial_office.name|default:"—" }}</td>
+          <td style="font-size:13px;">{{ u.distribution_center.name|default:"—" }}</td>
+          <td>{% if u.is_active %}<span class="badge badge-approved">Yes</span>{% else %}<span class="badge badge-rejected">No</span>{% endif %}</td>
+          <td style="text-align:right;">
+            <a href="{% url 'user_edit' u.pk %}" class="btn btn-outline btn-sm"><i class="fas fa-edit"></i> Edit</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" style="text-align:center; padding:40px; color:var(--text-muted);">No users found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if audit_logs %}
+<div class="card" style="overflow:hidden;">
+  <div class="card-header" style="background:linear-gradient(90deg,#0A1628,#1B4F72); color:white;">
+    <h2 style="margin:0; font-size:1rem;"><i class="fas fa-clipboard-list" style="margin-right:8px;"></i>Activity &amp; audit log</h2>
+    <div style="font-size:12px; opacity:0.85; margin-top:4px;">Logins, logouts, failed attempts, profile changes, and admin user changes (newest first).</div>
+  </div>
+  <div class="table-wrap" style="max-height:560px; overflow:auto;">
+    <table class="data-table" style="font-size:12px;">
+      <thead>
+        <tr style="background:#F7FAFC;">
+          <th style="white-space:nowrap;">When</th>
+          <th>Actor</th>
+          <th>Action</th>
+          <th>Model</th>
+          <th>Details</th>
+          <th>IP</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in audit_logs %}
+        <tr>
+          <td style="white-space:nowrap; color:var(--text-muted);">{{ log.timestamp|date:"d M Y H:i:s" }}</td>
+          <td>{% if log.user %}{{ log.user.username }}{% else %}<em style="color:var(--text-muted);">(none)</em>{% endif %}</td>
+          <td><span class="badge badge-primary" style="font-size:10px;">{{ log.action }}</span></td>
+          <td style="font-size:11px;">{{ log.model_name }}</td>
+          <td style="max-width:420px; word-break:break-word;">{{ log.description }}</td>
+          <td style="font-size:11px; color:var(--text-muted);">{{ log.ip_address|default:"—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if audit_logs.has_other_pages %}
+  <div style="padding:14px 18px; border-top:1px solid var(--border-color); display:flex; justify-content:center; flex-wrap:wrap; gap:8px; align-items:center;">
+    {% if audit_logs.has_previous %}
+    <a href="?audit_page={{ audit_logs.previous_page_number }}" class="btn btn-outline btn-sm">&laquo; Newer</a>
+    {% endif %}
+    <span style="font-size:12px; color:var(--text-muted);">Page {{ audit_logs.number }} of {{ audit_logs.paginator.num_pages }}</span>
+    {% if audit_logs.has_next %}
+    <a href="?audit_page={{ audit_logs.next_page_number }}" class="btn btn-outline btn-sm">Older &raquo;</a>
+    {% endif %}
+  </div>
+  {% endif %}
+  <div style="padding:12px 18px; background:#F8FAFC; font-size:12px; color:var(--text-muted); border-top:1px solid var(--border-color);">
+    <i class="fas fa-database" style="margin-right:6px;"></i>Full database access (including raw tables) remains in
+    <a href="{% url 'admin:nea_loss_auditlog_changelist' %}" target="_blank">Django Admin &rarr; Audit logs</a>.
+  </div>
+</div>
+{% endif %}
+{% endblock %}

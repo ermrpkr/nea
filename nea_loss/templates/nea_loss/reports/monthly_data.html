@@ -1,0 +1,1084 @@
+{% extends 'nea_loss/base.html' %}
+{% load nea_filters %}
+{% block title %}{{ month_name }} — {% if can_edit %}Data Entry{% else %}View Data{% endif %}{% endblock %}
+{% block page_title %}{{ month_name }} — {% if can_edit %}Monthly Data Entry{% else %}View Monthly Data{% endif %}{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; {{ report.distribution_center.name }} &rsaquo; {{ month_name }}{% if not can_edit %} (View){% endif %}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .section-heading {
+    background: var(--nea-blue);
+    color: white;
+    padding: 10px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 8px 8px 0 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .meter-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .meter-table th {
+    background: #F7FAFC; padding: 10px 14px; font-weight: 600; font-size: 11.5px;
+    color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border-color); text-align: center;
+  }
+  .meter-table td { padding: 8px 10px; border-bottom: 1px solid #F1F5F9; vertical-align: middle; }
+  .meter-table tr:last-child td { border-bottom: none; }
+  .meter-table tr:hover td { background: #FAFCFF; }
+  .meter-input {
+    width: 100%; padding: 7px 10px; border: 1px solid var(--border-color);
+    border-radius: 6px; font-size: 13px; text-align: right;
+    font-family: 'Inter', monospace; transition: border-color 0.15s;
+    background: white;
+  }
+  .meter-input:focus { outline: none; border-color: var(--nea-blue-mid); box-shadow: 0 0 0 3px rgba(46,134,193,0.1); }
+  .computed-cell { background: #F0F9FF; font-weight: 600; color: var(--nea-blue); padding: 7px 10px; border-radius: 5px; text-align: right; font-size: 13px; font-family: monospace; }
+  .total-row td { background: #EBF5FB; font-weight: 700; font-size: 13.5px; }
+  .mf-input { width: 80px; }
+  .section-total {
+    background: var(--nea-blue-light);
+    border-radius: 8px;
+    padding: 12px 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--nea-blue);
+    margin-top: 8px;
+  }
+  .live-summary {
+    position: sticky;
+    top: 80px;
+    background: white;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    padding: 20px;
+  }
+  .summary-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #F1F5F9; font-size: 13.5px; }
+  .summary-row:last-child { border-bottom: none; }
+  .summary-row .lbl { color: var(--text-secondary); }
+  .summary-row .val { font-weight: 600; font-family: monospace; }
+  .section-toolbar {
+    padding: 12px 18px;
+    background: #F8FAFC;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: flex-end;
+  }
+  .section-toolbar .tb-field { min-width: 140px; flex: 1; }
+  .section-toolbar .tb-field.narrow { flex: 0; min-width: 100px; width: 100px; }
+  .section-toolbar label { font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px; }
+  .btn-row-del {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 6px;
+    font-size: 14px;
+  }
+  .btn-row-del:hover { color: var(--nea-red); background: #FEF2F2; }
+  .read-only-banner {
+    background: #FEF9E7;
+    border: 1px solid #F9E79F;
+    color: #7D6608;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display:grid; grid-template-columns:1fr 260px; gap:20px; align-items:start;">
+
+<!-- LEFT: Data Entry Form -->
+<div>
+
+{% if not can_edit %}
+<div class="read-only-banner">
+  <i class="fas fa-lock" style="margin-right:8px;"></i>
+  {% if report.status == 'SUBMITTED' %}This report has been submitted and is awaiting review.{% elif report.status == 'APPROVED' %}This report has been approved.{% else %}This report cannot be edited in its current status.{% endif %} Data is shown read-only.
+</div>
+{% endif %}
+
+{% if not monthly %}
+<div class="alert alert-info" style="margin-bottom:20px;">
+  <i class="fas fa-info-circle"></i> 
+  <strong>No data entered yet.</strong> Start entering data below and click "Save Draft" to save your progress. Use "Back to Report" to return without saving.
+</div>
+{% endif %}
+
+<!-- ─── SECTION A: ENERGY IMPORT ─── -->
+<div class="card mb-24">
+  <div class="section-heading">
+    <i class="fas fa-arrow-down-to-bracket"></i> Section A — Energy Import
+  </div>
+
+  {% if can_edit %}
+  <div class="section-toolbar">
+    <div class="tb-field">
+      <label for="import-new-name">Meter / feeder / source name</label>
+      <input type="text" id="import-new-name" class="form-control" placeholder="e.g. 11 kV Feeder Bharma">
+    </div>
+    <div class="tb-field narrow" style="min-width:180px;">
+      <label for="import-new-type">Type</label>
+      <select id="import-new-type" class="form-control">
+        {% for val, label in import_type_choices %}
+        <option value="{{ val }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="tb-field narrow">
+      <label for="import-new-mf">M.F.</label>
+      <input type="number" id="import-new-mf" class="form-control" value="1" step="0.001" min="0">
+    </div>
+    <button type="button" class="btn btn-primary btn-sm" style="margin-bottom:2px;" onclick="addMeterPoint('import')">
+      <i class="fas fa-plus"></i> Add line
+    </button>
+  </div>
+  {% endif %}
+
+  <div class="table-wrap">
+    <table class="meter-table" id="import-table">
+      <thead>
+        <tr>
+          <th style="text-align:left; width:220px;">Meter Point / Source</th>
+          <th style="text-align:left; width:80px;">Type</th>
+          <th>Present Reading</th>
+          <th>Previous Reading</th>
+          <th>Difference</th>
+          <th>M.F.</th>
+          <th>Unit (kWh)</th>
+          {% if can_edit %}<th style="width:44px;"></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for mp in import_points %}
+        {% with reading=existing_readings|get_item:mp.pk %}
+        <tr data-mp="{{ mp.pk }}" data-type="import" data-single="{{ mp.is_single_reading|yesno:'1,0' }}">
+          <td>
+            <div style="font-weight:500;">{{ mp.name }}</div>
+            <div style="font-size:11px; color:var(--text-muted);">{{ mp.get_source_type_display }}{% if mp.voltage_level %} · {{ mp.voltage_level }}{% endif %}</div>
+          </td>
+          <td><span class="badge badge-submitted" style="font-size:10px;">{{ mp.get_source_type_display|slice:":3" }}</span></td>
+          <td><input type="number" class="meter-input present-r" step="0.001" value="{{ reading.present_reading|default:'' }}" placeholder="0.000" oninput="calcRow(this)" {% if not can_edit %}disabled{% endif %}></td>
+          <td>
+            {% if mp.is_single_reading %}
+              {# ENERGY_IMPORT / ENERGY_EXPORT: only present reading — no previous #}
+              <input type="number" class="meter-input previous-r" step="0.001" value="0" readonly
+                     style="background:#F0F4F8;color:#A0AEC0;cursor:not-allowed;"
+                     title="Energy Import/Export type: unit = present × M.F. only">
+            {% elif month == 1 %}
+              {# Shrawan: first month of fiscal year — previous reading is user-entered #}
+              <input type="number" class="meter-input previous-r" step="0.001"
+                     value="{{ reading.previous_reading|default:'' }}"
+                     placeholder="0.000" oninput="calcRow(this)"
+                     {% if not can_edit %}disabled{% endif %}>
+            {% elif mp.pk in new_meter_point_ids %}
+              {# Brand-new feeder with no prior reading in any month — user enters manually #}
+              <input type="number" class="meter-input previous-r" step="0.001"
+                     value="{{ reading.previous_reading|default:'' }}"
+                     placeholder="0.000" oninput="calcRow(this)"
+                     {% if not can_edit %}disabled{% endif %}
+                     title="New feeder — enter previous reading if available">
+            {% else %}
+              <!-- {# Existing feeder: show saved previous_reading if already set,
+                 otherwise auto-fill from last month's present reading (read-only) #} -->
+              {% if reading and reading.previous_reading %}
+                <input type="number" class="meter-input previous-r" step="0.001"
+                       value="{{ reading.previous_reading }}"
+                       placeholder="0.000" readonly
+                       style="background:#F5F5F5;cursor:not-allowed;"
+                       title="Saved previous reading (auto-filled from last month) for {{ mp.name }}">
+              {% else %}
+                <input type="number" class="meter-input previous-r" step="0.001"
+                       value="{{ previous_readings_dict|get_item:mp.pk|default:'' }}"
+                       placeholder="0.000" readonly
+                       style="background:#EBF5FB;cursor:not-allowed;color:#1B4F72;font-weight:600;"
+                       title="Auto-filled: last month's present reading for {{ mp.name }}">
+              {% endif %}
+            {% endif %}
+          </td>
+          <td><div class="computed-cell diff-cell">{{ reading.difference|default:'0.000' }}</div></td>
+          <td><input type="number" class="meter-input mf-input mf-val" step="0.001" value="{{ reading.multiplying_factor|default:mp.multiplying_factor }}" oninput="calcRow(this)" {% if not can_edit %}disabled{% endif %}></td>
+          <td><div class="computed-cell unit-cell" style="color:var(--nea-green);">{{ reading.unit_kwh|default:'0.00' }}</div></td>
+          {% if can_edit %}
+          <td style="text-align:center;">
+            <button type="button" class="btn-row-del"
+                    title="Delete/disable this feeder for this month"
+                    onclick="deleteMeterReadingForMonth({{ mp.pk }})">
+              <i class="fas fa-trash-alt"></i>
+            </button>
+          </td>
+          {% endif %}
+        </tr>
+        {% endwith %}
+        {% empty %}
+        <tr>
+          <td colspan="{% if can_edit %}8{% else %}7{% endif %}" style="text-align:center; color:var(--text-muted); padding:20px;">
+            {% if can_edit %}No import lines yet. Add a feeder, substation, or other import source above.{% else %}No import meter points.{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        {% if monthly %}
+        <tr class="total-row">
+          <td colspan="6" style="text-align:right; padding:10px 14px;">Total Energy Import:</td>
+          <td><div class="computed-cell" id="total-import" style="color:var(--nea-blue); font-size:14px;">{{ monthly.total_energy_import }}</div></td>
+          {% if can_edit %}<td></td>{% endif %}
+        </tr>
+        {% endif %}
+      </tfoot>
+    </table>
+  </div>
+  <div style="padding:14px 18px; border-top:1px solid var(--border-color);">
+    <div class="section-total">
+      <span>Total Energy Import</span>
+      <span id="import-total-display">{% if monthly %}{{ monthly.total_energy_import }}{% else %}0{% endif %} kWh</span>
+    </div>
+  </div>
+</div>
+
+<!-- ─── SECTION B: ENERGY EXPORT ─── -->
+<div class="card mb-24">
+  <div class="section-heading" style="background:#7D3C98;">
+    <i class="fas fa-arrow-up-from-bracket"></i> Section B — Energy Export
+  </div>
+  {% if can_edit %}
+  <div class="section-toolbar" style="background:#FAF5FC;">
+    <div class="tb-field">
+      <label for="export-new-name">Export / outgoing meter name</label>
+      <input type="text" id="export-new-name" class="form-control" placeholder="e.g. Export to adjacent DC">
+    </div>
+    <div class="tb-field narrow" style="min-width:180px;">
+      <label for="export-new-type">Type</label>
+      <select id="export-new-type" class="form-control">
+        {% for val, label in export_type_choices %}
+        <option value="{{ val }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="tb-field narrow">
+      <label for="export-new-mf">M.F.</label>
+      <input type="number" id="export-new-mf" class="form-control" value="1" step="0.001" min="0">
+    </div>
+    <button type="button" class="btn btn-primary btn-sm" style="margin-bottom:2px; background:#7D3C98; border-color:#7D3C98;" onclick="addMeterPoint('export')">
+      <i class="fas fa-plus"></i> Add line
+    </button>
+  </div>
+  {% endif %}
+  <div class="table-wrap">
+    <table class="meter-table" id="export-table">
+      <thead>
+        <tr>
+          <th style="text-align:left; width:220px;">Meter Point / Destination</th>
+          <th style="text-align:left; width:80px;">Type</th>
+          <th>Present Reading</th>
+          <th>Previous Reading</th>
+          <th>Difference</th>
+          <th>M.F.</th>
+          <th>Unit (kWh)</th>
+          {% if can_edit %}<th style="width:44px;"></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for mp in export_points %}
+        {% with reading=existing_readings|get_item:mp.pk %}
+        <tr data-mp="{{ mp.pk }}" data-type="export" data-single="{{ mp.is_single_reading|yesno:'1,0' }}">
+          <td>
+            <div style="font-weight:500;">{{ mp.name }}</div>
+            <div style="font-size:11px; color:var(--text-muted);">{{ mp.get_source_type_display }}{% if mp.voltage_level %} · {{ mp.voltage_level }}{% endif %}</div>
+          </td>
+          <td><span class="badge badge-warning" style="font-size:10px;">EXP</span></td>
+          <td><input type="number" class="meter-input present-r" step="0.001" value="{{ reading.present_reading|default:'' }}" placeholder="0.000" oninput="calcRow(this)" {% if not can_edit %}disabled{% endif %}></td>
+          <td>
+            {% if mp.is_single_reading %}
+              {# ENERGY_EXPORT: only present reading — no previous #}
+              <input type="number" class="meter-input previous-r" step="0.001" value="0" readonly
+                     style="background:#F0F4F8;color:#A0AEC0;cursor:not-allowed;"
+                     title="Energy Export type: unit = present × M.F. only">
+            {% elif month == 1 %}
+              {# Shrawan: first month — previous reading user-entered #}
+              <input type="number" class="meter-input previous-r" step="0.001"
+                     value="{{ reading.previous_reading|default:'' }}"
+                     placeholder="0.000" oninput="calcRow(this)"
+                     {% if not can_edit %}disabled{% endif %}>
+            {% elif mp.pk in new_meter_point_ids %}
+              {# New feeder with no prior reading — user enters manually #}
+              <input type="number" class="meter-input previous-r" step="0.001"
+                     value="{{ reading.previous_reading|default:'' }}"
+                     placeholder="0.000" oninput="calcRow(this)"
+                     {% if not can_edit %}disabled{% endif %}
+                     title="New feeder — enter previous reading if available">
+            {% else %}
+              {# Existing feeder: show saved or auto-fill from last month #}
+              {% if reading and reading.previous_reading %}
+                <input type="number" class="meter-input previous-r" step="0.001"
+                       value="{{ reading.previous_reading }}"
+                       placeholder="0.000" readonly
+                       style="background:#F5F5F5;cursor:not-allowed;"
+                       title="Saved previous reading (auto-filled from last month) for {{ mp.name }}">
+              {% else %}
+                <input type="number" class="meter-input previous-r" step="0.001"
+                       value="{{ previous_readings_dict|get_item:mp.pk|default:'' }}"
+                       placeholder="0.000" readonly
+                       style="background:#EBF5FB;cursor:not-allowed;color:#1B4F72;font-weight:600;"
+                       title="Auto-filled: last month's present reading for {{ mp.name }}">
+              {% endif %}
+            {% endif %}
+          </td>
+          <td><div class="computed-cell diff-cell">{{ reading.difference|default:'0.000' }}</div></td>
+          <td><input type="number" class="meter-input mf-input mf-val" step="0.001" value="{{ reading.multiplying_factor|default:mp.multiplying_factor }}" oninput="calcRow(this)" {% if not can_edit %}disabled{% endif %}></td>
+          <td><div class="computed-cell unit-cell" style="color:#7D3C98;">{{ reading.unit_kwh|default:'0.00' }}</div></td>
+          {% if can_edit %}
+          <td style="text-align:center;">
+            <button type="button" class="btn-row-del"
+                    title="Delete/disable this feeder for this month"
+                    onclick="deleteMeterReadingForMonth({{ mp.pk }})">
+              <i class="fas fa-trash-alt"></i>
+            </button>
+          </td>
+          {% endif %}
+        </tr>
+        {% endwith %}
+        {% empty %}
+        <tr>
+          <td colspan="{% if can_edit %}8{% else %}7{% endif %}" style="text-align:center; color:var(--text-muted); padding:20px;">
+            {% if can_edit %}No export lines yet. Add export or inter-DC transfer meters above.{% else %}No export meter points.{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        {% if monthly %}
+        <tr class="total-row">
+          <td colspan="6" style="text-align:right; padding:10px 14px;">Total Energy Export:</td>
+          <td><div class="computed-cell" id="total-export" style="color:#7D3C98; font-size:14px;">{{ monthly.total_energy_export }}</div></td>
+          {% if can_edit %}<td></td>{% endif %}
+        </tr>
+        {% endif %}
+      </tfoot>
+    </table>
+  </div>
+  <div style="padding:14px 18px; border-top:1px solid var(--border-color);">
+    <div class="section-total" style="background:#F5EEF8; color:#7D3C98;">
+      <span>Total Energy Export</span>
+      <span id="export-total-display">{% if monthly %}{{ monthly.total_energy_export }}{% else %}0{% endif %} kWh</span>
+    </div>
+  </div>
+</div>
+
+<!-- ─── NET RECEIVED ─── -->
+<div style="background:linear-gradient(135deg, #1B4F72, #2E86C1); border-radius:10px; padding:18px 24px; color:white; margin-bottom:24px; display:flex; align-items:center; justify-content:space-between;">
+  <div>
+    <div style="font-size:12px; opacity:0.75; letter-spacing:0.5px; text-transform:uppercase;">Section C — Net Energy Received</div>
+    <div style="font-size:11px; opacity:0.6; margin-top:2px;">= Total Import (A) − Total Export (B)</div>
+  </div>
+  <div style="font-size:28px; font-weight:700; font-family:monospace;" id="net-received-display">
+    {% if monthly %}{{ monthly.net_energy_received }}{% else %}0{% endif %} kWh
+  </div>
+</div>
+
+<!-- ─── SECTION D: ENERGY UTILISED ─── -->
+<div class="card mb-24">
+  <div class="section-heading" style="background:var(--nea-green);">
+    <i class="fas fa-users"></i> Section D — Energy Utilised by Consumer Category
+  </div>
+  {% if can_edit %}
+  <div class="section-toolbar" style="background:#F0FDF4;">
+    <div class="tb-field">
+      <label for="new-consumer-cat-name">Add consumer category (for this DC)</label>
+      <input type="text" id="new-consumer-cat-name" class="form-control" placeholder="e.g. Temporary supply, Dedicated feeder load">
+    </div>
+    <button type="button" class="btn btn-primary btn-sm" style="margin-bottom:2px; background:var(--nea-green); border-color:var(--nea-green);" onclick="addConsumerCategory()">
+      <i class="fas fa-plus"></i> Add category row
+    </button>
+    <span style="font-size:12px; color:var(--text-muted); align-self:center;">Applies to Sections D and E. Standard NEA categories stay available; only your added rows can be removed here.</span>
+  </div>
+  {% endif %}
+  <div class="table-wrap">
+    <table class="meter-table" id="utilisation-table">
+      <thead>
+        <tr>
+          <th style="text-align:left;">S.No.</th>
+          <th style="text-align:left; width:240px;">Consumer Category</th>
+          <th>Energy (kWh)</th>
+          <th style="text-align:left;">Remarks</th>
+          {% if can_edit %}<th style="width:44px;"></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for cat in consumer_categories %}
+        {% with eu=existing_utilisations|get_item:cat.pk %}
+        <tr data-cat="{{ cat.pk }}" data-dc-row="{% if cat.distribution_center_id %}1{% else %}0{% endif %}">
+          <td style="text-align:center; color:var(--text-muted); font-size:12px;">{{ forloop.counter }}</td>
+          <td style="font-weight:500;">
+            {{ cat.name }}
+            {% if cat.distribution_center_id %}<span class="badge badge-warning" style="font-size:9px; margin-left:6px;">DC</span>{% endif %}
+          </td>
+          <td>
+            <input type="number" class="meter-input utilised-input" step="0.01"
+                   value="{{ eu.energy_kwh|default:'' }}" placeholder="0.00"
+                   data-cat="{{ cat.pk }}" onchange="updateTotalUtilised()" {% if not can_edit %}disabled{% endif %}>
+          </td>
+          <td>
+            <input type="text" class="meter-input remarks-util" style="text-align:left;" value="{{ eu.remarks|default:'' }}" placeholder="—" {% if not can_edit %}disabled{% endif %}>
+          </td>
+          {% if can_edit %}
+          <td style="text-align:center;">
+            {% if cat.distribution_center_id %}
+            <button type="button" class="btn-row-del" title="Remove this category for your DC (all months)" onclick="deleteConsumerCategory({{ cat.pk }})"><i class="fas fa-trash-alt"></i></button>
+            {% endif %}
+          </td>
+          {% endif %}
+        </tr>
+        {% endwith %}
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="total-row">
+          <td colspan="2" style="text-align:right; padding:10px 14px;">Grand Total:</td>
+          <td><div class="computed-cell" id="total-utilised" style="color:var(--nea-green); font-size:14px;">{% if monthly %}{{ monthly.total_energy_utilised }}{% else %}0{% endif %}</div></td>
+          <td></td>
+          {% if can_edit %}<td></td>{% endif %}
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+
+<!-- ─── SECTION E: CONSUMER COUNT ─── -->
+<div class="card mb-24">
+  <div class="section-heading" style="background:#1A5276;">
+    <i class="fas fa-user-friends"></i> Section E — Consumer Count
+  </div>
+  {% if can_edit %}
+  <div class="section-toolbar" style="background:#EBF5FB;">
+    <span style="font-size:12px; color:var(--text-muted);">Same categories as Section D. Add or remove rows using Section D toolbar.</span>
+  </div>
+  {% endif %}
+  <div class="table-wrap">
+    <table class="meter-table" id="count-table">
+      <thead>
+        <tr>
+          <th style="text-align:left;">S.No.</th>
+          <th style="text-align:left; width:240px;">Consumer Category</th>
+          <th>Count</th>
+          <th style="text-align:left;">Remarks</th>
+          {% if can_edit %}<th style="width:44px;"></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for cat in consumer_categories %}
+        {% with cc=existing_counts|get_item:cat.pk %}
+        <tr data-cat="{{ cat.pk }}">
+          <td style="text-align:center; color:var(--text-muted); font-size:12px;">{{ forloop.counter }}</td>
+          <td style="font-weight:500;">
+            {{ cat.name }}
+            {% if cat.distribution_center_id %}<span class="badge badge-warning" style="font-size:9px; margin-left:6px;">DC</span>{% endif %}
+          </td>
+          <td>
+            <input type="number" class="meter-input count-input" step="1"
+                   value="{{ cc.count|default:'' }}" placeholder="0"
+                   data-cat="{{ cat.pk }}" style="text-align:right;" {% if not can_edit %}disabled{% endif %}>
+          </td>
+          <td>
+            <input type="text" class="meter-input remarks-count" style="text-align:left;" value="{{ cc.remarks|default:'' }}" placeholder="—" {% if not can_edit %}disabled{% endif %}>
+          </td>
+          {% if can_edit %}
+          <td style="text-align:center;">
+            {% if cat.distribution_center_id %}
+            <button type="button" class="btn-row-del" title="Remove this category for your DC (all months)" onclick="deleteConsumerCategory({{ cat.pk }})"><i class="fas fa-trash-alt"></i></button>
+            {% endif %}
+          </td>
+          {% endif %}
+        </tr>
+        {% endwith %}
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="total-row">
+          <td colspan="2" style="text-align:right; padding:10px 14px;">Grand Total:</td>
+          <td><div class="computed-cell" id="total-count" style="color:#1A5276; font-size:14px;">0</div></td>
+          <td></td>
+          {% if can_edit %}<td></td>{% endif %}
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+
+<!-- Save Buttons -->
+<div style="display:flex; gap:12px; justify-content:flex-end; padding:20px 0; border-top:1px solid var(--border-color);">
+  <a href="{% url 'report_list' %}" class="btn btn-outline" onclick="return confirmDeleteEmptyReport();"><i class="fas fa-arrow-left"></i> Back to Reports</a>
+  <button onclick="saveAllData()" class="btn btn-primary" id="save-btn" {% if not can_edit %}disabled style="opacity:0.5;"{% endif %}>
+    <i class="fas fa-save"></i> Save Draft
+  </button>
+  {% if can_edit %}
+  {% if report.status == 'DRAFT' or report.status == 'REJECTED' %}
+  <button onclick="submitReportFromData()" class="btn btn-success" id="submit-btn">
+    <i class="fas fa-paper-plane"></i> {% if report.status == 'REJECTED' %}Resubmit Report{% else %}Submit Report{% endif %}
+  </button>
+  {% endif %}
+{% endif %}
+  {% if can_edit %}
+  <form method="POST" action="{% url 'monthly_data_delete' report.pk month %}" style="display:inline;">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-outline btn-danger" onclick="return confirm('Delete this month data?')">
+      <i class="fas fa-trash"></i> Delete This Month
+    </button>
+  </form>
+  {% endif %}
+</div>
+
+</div><!-- end left col -->
+
+<!-- RIGHT: Live Summary Panel -->
+<div>
+  <div class="live-summary">
+    <div style="font-size:13px; font-weight:700; margin-bottom:14px; display:flex; align-items:center; gap:8px;">
+      <i class="fas fa-calculator" style="color:var(--nea-blue-mid);"></i>
+      Live Calculation — {{ month_name }}
+    </div>
+    <div class="summary-row">
+      <span class="lbl">Energy Import (A)</span>
+      <span class="val" id="s-import">{% if monthly %}{{ monthly.total_energy_import }}{% else %}0{% endif %}</span>
+    </div>
+    <div class="summary-row">
+      <span class="lbl">Energy Export (B)</span>
+      <span class="val" id="s-export">{% if monthly %}{{ monthly.total_energy_export }}{% else %}0{% endif %}</span>
+    </div>
+    <div class="summary-row" style="border-top:2px solid var(--nea-blue-light); padding-top:10px; margin-top:4px;">
+      <span class="lbl" style="font-weight:600;">Net Received (A−B)</span>
+      <span class="val" id="s-net" style="color:var(--nea-blue);">{% if monthly %}{{ monthly.net_energy_received }}{% else %}0{% endif %}</span>
+    </div>
+    <div class="summary-row">
+      <span class="lbl">Utilised (D)</span>
+      <span class="val" id="s-utilised" style="color:var(--nea-green);">{% if monthly %}{{ monthly.total_energy_utilised }}{% else %}0{% endif %}</span>
+    </div>
+    <div class="summary-row" style="border-top:2px solid var(--nea-red-light); padding-top:10px; margin-top:4px;">
+      <span class="lbl" style="font-weight:600;">Loss = Net − Utilised</span>
+      <span class="val" id="s-loss" style="color:var(--nea-red);">{% if monthly %}{{ monthly.loss_unit }}{% else %}0{% endif %}</span>
+    </div>
+
+    {# Monthly Loss % — for this month only #}
+    <div style="margin-top:12px; background:#F7FAFC; border-radius:8px; padding:14px;">
+      <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">
+        Monthly Loss % <span style="font-weight:400;">(this month)</span>
+      </div>
+      <div style="font-size:28px; font-weight:700;" id="s-loss-pct"
+           class="{% if monthly and monthly.monthly_loss_percent > report.fiscal_year.loss_target_percent|div:100 %}above-target{% else %}below-target{% endif %}">
+        {% if monthly %}{{ monthly.monthly_loss_percent|multiply:100|floatformat:4 }}{% else %}0{% endif %}%
+      </div>
+      <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Target: {{ report.fiscal_year.loss_target_percent }}%</div>
+    </div>
+    <div style="margin-top:10px;">
+      <div class="progress-bar-wrap">
+        <div class="progress-bar" id="s-progress-bar"
+             style="width:{% if monthly %}{{ monthly.monthly_loss_percent|multiply:100|floatformat:2 }}{% else %}0{% endif %}%; background:{% if monthly and monthly.monthly_loss_percent > report.fiscal_year.loss_target_percent|div:100 %}var(--nea-red){% else %}var(--nea-green){% endif %};">
+        </div>
+      </div>
+    </div>
+
+    {# Cumulative Loss % — YTD across all months #}
+    {% if report.cumulative_loss_percent %}
+    <div style="margin-top:12px; background:#FEF9E7; border-radius:8px; padding:12px 14px; border:1px solid #F9E79F;">
+      <div style="font-size:11px; color:#7D6608; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">
+        Cumulative Loss % <span style="font-weight:400;">(YTD)</span>
+      </div>
+      <div style="font-size:22px; font-weight:700; color:{% if report.cumulative_loss_percent > report.fiscal_year.loss_target_percent|div:100 %}var(--nea-red){% else %}var(--nea-green){% endif %};">
+        {{ report.cumulative_loss_percent|multiply:100|floatformat:4 }}%
+      </div>
+    </div>
+    {% endif %}
+
+    <div style="margin-top:10px; font-size:11px; opacity:0.6;">Meter Readings: <strong id="s-count">{% if monthly %}{{ monthly.meter_readings.all|length }}{% else %}0{% endif %}</strong></div>
+  </div>
+</div>
+
+</div><!-- end grid -->
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const monthlyId = {% if monthly %}{{ monthly.pk }}{% else %}null{% endif %};
+const reportPk = {{ report.pk }};
+const targetPct = {{ report.fiscal_year.loss_target_percent }};
+const canEdit = {{ can_edit|yesno:"true,false" }};
+const manageMeterUrl = '{% url "api_manage_meter_point" %}';
+const manageCatUrl = '{% url "api_manage_consumer_category" %}';
+const deleteMonthMeterReadingUrl = '{% url "api_delete_meter_reading_for_month" %}';
+
+function confirmDeleteEmptyReport() {
+  // Only show delete confirmation for truly empty draft reports
+  if (!monthlyId && '{{ report.status }}' === 'DRAFT') {
+    if (confirm('No data entered. Do you want to delete this empty report?')) {
+      // Delete the empty report and redirect to reports list
+      fetch(`/reports/${reportPk}/delete/`, {
+        method: 'POST',
+        headers: {'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value}
+      }).then(() => {
+        window.location.href = '/reports/';
+      });
+    }
+  } else {
+    // Data exists, just go back to reports
+    window.location.href = '/reports/';
+  }
+  return false;
+}
+
+function getVal(el) {
+  if (!el) return 0;
+  // For disabled inputs, still read the actual value from the DOM
+  return parseFloat(el.value) || 0;
+}
+
+const singleReadingIds = {{ single_reading_ids|safe }};
+
+function calcRow(input) {
+  const row = input.closest('tr');
+  const prEl = row.querySelector('.present-r');
+  const prevEl = row.querySelector('.previous-r');
+  if (!prEl) return;
+  const present = getVal(prEl);
+  const isSingle = row.dataset.single === '1';
+  const mf = getVal(row.querySelector('.mf-val'));
+  let diff;
+  if (isSingle) {
+    // ENERGY_IMPORT / ENERGY_EXPORT: unit = present * MF, no subtraction
+    diff = present;
+    if (prevEl) prevEl.value = '0';
+  } else {
+    const previous = getVal(prevEl);
+    diff = present - previous;
+  }
+  const unit = diff * mf;
+  row.querySelector('.diff-cell').textContent = diff.toFixed(3);
+  row.querySelector('.unit-cell').textContent = unit.toFixed(2);
+  updateTotals();
+}
+
+function updateTotals() {
+  let importTotal = 0, exportTotal = 0;
+
+  document.querySelectorAll('#import-table tbody tr').forEach(row => {
+    importTotal += parseFloat(row.querySelector('.unit-cell')?.textContent || 0);
+  });
+  document.querySelectorAll('#export-table tbody tr').forEach(row => {
+    exportTotal += parseFloat(row.querySelector('.unit-cell')?.textContent || 0);
+  });
+
+  const netReceived = importTotal - exportTotal;
+  const utilised = getTotalUtilised();
+  const loss = netReceived - utilised;
+  const lossPct = netReceived > 0 ? (loss / netReceived) * 100 : 0;
+
+  // Update table totals
+  const ti = document.getElementById('total-import');
+  if (ti) ti.textContent = importTotal.toFixed(2);
+  const te = document.getElementById('total-export');
+  if (te) te.textContent = exportTotal.toFixed(2);
+
+  // Update display strings
+  document.getElementById('import-total-display').textContent = importTotal.toFixed(2) + ' kWh';
+  document.getElementById('export-total-display').textContent = exportTotal.toFixed(2) + ' kWh';
+  document.getElementById('net-received-display').textContent = netReceived.toFixed(2) + ' kWh';
+
+  // Update sidebar
+  document.getElementById('s-import').textContent = importTotal.toFixed(2);
+  document.getElementById('s-export').textContent = exportTotal.toFixed(2);
+  document.getElementById('s-net').textContent = netReceived.toFixed(2);
+  document.getElementById('s-utilised').textContent = utilised.toFixed(2);
+  document.getElementById('s-loss').textContent = loss.toFixed(2);
+
+  const lossPctEl = document.getElementById('s-loss-pct');
+  lossPctEl.textContent = lossPct.toFixed(4) + '%';
+  lossPctEl.style.color = lossPct > targetPct ? 'var(--nea-red)' : 'var(--nea-green)';
+
+  const bar = document.getElementById('s-progress-bar');
+  bar.style.width = Math.min(lossPct, 15).toFixed(2) + '%';
+  bar.style.background = lossPct > targetPct ? 'var(--nea-red)' : 'var(--nea-green)';
+}
+
+function getTotalUtilised() {
+  let total = 0;
+  document.querySelectorAll('.utilised-input').forEach(inp => {
+    total += getVal(inp);
+  });
+  return total;
+}
+
+function updateTotalUtilised() {
+  const total = getTotalUtilised();
+  document.getElementById('total-utilised').textContent = total.toFixed(2);
+  document.getElementById('s-utilised').textContent = total.toFixed(2);
+  updateTotals();
+}
+
+function updateTotalCount() {
+  let total = 0;
+  document.querySelectorAll('.count-input').forEach(inp => {
+    total += parseInt(inp.value) || 0;
+  });
+  document.getElementById('total-count').textContent = total.toLocaleString();
+  document.getElementById('s-count').textContent = total.toLocaleString();
+}
+document.querySelectorAll('.count-input').forEach(inp => inp.addEventListener('change', updateTotalCount));
+
+async function addMeterPoint(section) {
+  if (!canEdit) return;
+  const pre = section === 'export' ? 'export' : 'import';
+  const name = document.getElementById(pre + '-new-name').value.trim();
+  const typeEl = document.getElementById(pre + '-new-type');
+  const mf = document.getElementById(pre + '-new-mf').value || '1';
+  if (!name) {
+    alert('Enter a name for the new meter line.');
+    return;
+  }
+  try {
+    const ok = await saveAllData();
+    if (!ok) return;
+    const r = await fetch(manageMeterUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+      body: JSON.stringify({
+        action: 'create',
+        report_pk: reportPk,
+        name: name,
+        source_type: typeEl.value,
+        multiplying_factor: parseFloat(mf) || 1,
+      }),
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error || 'Request failed');
+    window.location.reload();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function deleteMeterPoint(mpId) {
+  if (!canEdit) return;
+  if (!confirm('Remove this meter line for your distribution centre? All readings for all months will be deleted.')) return;
+  try {
+    const r = await fetch(manageMeterUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+      body: JSON.stringify({ action: 'delete', report_pk: reportPk, meter_point_id: mpId }),
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error || 'Request failed');
+    window.location.reload();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function deleteMeterReadingForMonth(mpId) {
+  if (!canEdit) return;
+  if (!confirm(
+    'Remove this feeder from this month only?\n\n' +
+    'The feeder will be excluded from this month\'s report.\n' +
+    'All other months (including previously approved reports) will NOT be affected.'
+  )) return;
+
+  try {
+    // Save all OTHER feeders' readings first so unsaved data is not lost when
+    // the page reloads after delete. We skip full saveAllData validation so
+    // that a partial save (some rows empty) still persists the filled ones.
+    const readingsToSave = [];
+    document.querySelectorAll('#import-table tbody tr, #export-table tbody tr').forEach(row => {
+      const rowMpId = parseInt(row.dataset.mp);
+      if (rowMpId === mpId) return; // skip the feeder being deleted
+      const present = row.querySelector('.present-r')?.value;
+      const presentNum = parseFloat(present);
+      if (!Number.isFinite(presentNum) || presentNum === 0) return; // skip blank rows
+      const isSingle = row.dataset.single === '1';
+      const mf = row.querySelector('.mf-val')?.value;
+      readingsToSave.push({
+        meter_point_id: rowMpId,
+        present_reading: presentNum,
+        previous_reading: isSingle ? 0 : (parseFloat(row.querySelector('.previous-r')?.value) || 0),
+        multiplying_factor: Number.isFinite(parseFloat(mf)) ? parseFloat(mf) : 1,
+      });
+    });
+
+    // Ensure MonthlyLossData row exists before calling delete
+    let currentMonthlyId = monthlyId;
+    if (!currentMonthlyId) {
+      const createResp = await fetch('/api/monthly-data/create/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+        body: JSON.stringify({ report_id: reportPk, month: parseInt('{{ month }}', 10) })
+      });
+      const createData = await createResp.json();
+      if (!createData.success) throw new Error(createData.error || 'Could not initialise month record');
+      currentMonthlyId = createData.monthly_id;
+    }
+
+    // Persist other feeders' readings before deleting so they are not lost on reload
+    if (readingsToSave.length > 0) {
+      await fetch('/api/meter-readings/save/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+        body: JSON.stringify({ monthly_id: currentMonthlyId, readings: readingsToSave }),
+      });
+    }
+
+    const r = await fetch(manageMeterUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+      body: JSON.stringify({
+        action: 'delete',
+        report_pk: reportPk,
+        meter_point_id: mpId,
+        monthly_id: currentMonthlyId,
+      }),
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error || 'Request failed');
+    showToast(d.message, 'info');
+    window.location.reload();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+function showToast(msg, type) {
+  const div = document.createElement('div');
+  div.style.cssText = `position:fixed;bottom:24px;right:24px;z-index:9999;background:${type==='info'?'#1B4F72':'#1E8449'};color:white;padding:12px 20px;border-radius:10px;font-size:13px;max-width:380px;box-shadow:0 4px 16px rgba(0,0,0,0.2);`;
+  div.textContent = msg;
+  document.body.appendChild(div);
+  setTimeout(() => div.remove(), 4000);
+}
+
+async function addConsumerCategory() {
+  if (!canEdit) return;
+  const name = document.getElementById('new-consumer-cat-name').value.trim();
+  if (!name) {
+    alert('Enter a name for the new consumer category.');
+    return;
+  }
+  try {
+    const ok = await saveAllData();
+    if (!ok) return;
+    const r = await fetch(manageCatUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+      body: JSON.stringify({ action: 'create', report_pk: reportPk, name: name }),
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error || 'Request failed');
+    window.location.reload();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function deleteConsumerCategory(catId) {
+  if (!canEdit) return;
+  if (!confirm('Remove this DC-specific category? Energy and consumer counts for all months will be deleted.')) return;
+  try {
+    const ok = await saveAllData();
+    if (!ok) return;
+    const r = await fetch(manageCatUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+      body: JSON.stringify({ action: 'delete', report_pk: reportPk, category_id: catId }),
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error || 'Request failed');
+    window.location.reload();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function saveAllData() {
+  if (!canEdit) return false;
+  
+  // Check if user has entered any data before allowing save
+  const hasMeterReadings = document.querySelectorAll('#import-table tbody tr, #export-table tbody tr').length > 0;
+  const hasConsumerData = document.querySelectorAll('#consumer-categories tbody tr').length > 0;
+  
+  if (!hasMeterReadings && !hasConsumerData) {
+    alert('Please enter at least one meter reading or consumer count before saving.');
+    return false;
+  }
+  const btn = document.getElementById('save-btn');
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving Draft...';
+  btn.disabled = true;
+
+  // Collect meter readings
+  const readings = [];
+  document.querySelectorAll('#import-table tbody tr, #export-table tbody tr').forEach(row => {
+    const mp = row.dataset.mp;
+    const present = row.querySelector('.present-r')?.value;
+    const isSingle = row.dataset.single === '1';
+    const mf = row.querySelector('.mf-val')?.value;
+    const presentNum = parseFloat(present);
+    if (!Number.isFinite(presentNum)) return;
+    readings.push({
+      meter_point_id: parseInt(mp),
+      present_reading: presentNum,
+      // Single-reading types always have previous=0; others read from the field
+      previous_reading: isSingle ? 0 : (parseFloat(row.querySelector('.previous-r')?.value) || 0),
+      multiplying_factor: Number.isFinite(parseFloat(mf)) ? parseFloat(mf) : 1,
+    });
+  });
+
+  // Collect utilisations
+  const utilisations = [];
+  document.querySelectorAll('#utilisation-table tbody tr').forEach(row => {
+    const cat = row.dataset.cat;
+    if (!cat) return;
+    const energy = row.querySelector('.utilised-input')?.value;
+    const remarks = row.querySelector('.remarks-util')?.value || '';
+    utilisations.push({
+      category_id: parseInt(cat, 10),
+      energy_kwh: parseFloat(energy) || 0,
+      remarks: remarks,
+    });
+  });
+
+  // Collect counts
+  const counts = [];
+  document.querySelectorAll('#count-table tbody tr').forEach(row => {
+    const cat = row.dataset.cat;
+    if (!cat) return;
+    const count = row.querySelector('.count-input')?.value;
+    const remarks = row.querySelector('.remarks-count')?.value || '';
+    counts.push({
+      category_id: parseInt(cat, 10),
+      count: parseInt(count, 10) || 0,
+      remarks: remarks,
+    });
+  });
+
+  try {
+    // Create monthly data if it doesn't exist (for new reports, rejected reports, etc.)
+    let currentMonthlyId = monthlyId;
+    if (!monthlyId) {
+      const createResponse = await fetch('/api/monthly-data/create/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+        body: JSON.stringify({ 
+          report_id: reportPk,
+          month: parseInt({{ month }}, 10)  // Ensure month is passed as integer
+        })
+      });
+      const createData = await createResponse.json();
+      if (!createData.success) throw new Error(createData.error || 'Failed to create monthly data');
+      currentMonthlyId = createData.monthly_id;
+    }
+
+    // Save meter readings
+    if (readings.length) {
+      const r1 = await fetch('/api/meter-readings/save/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+        body: JSON.stringify({ monthly_id: currentMonthlyId, readings })
+      });
+      const d1 = await r1.json();
+      if (!d1.success) throw new Error(d1.error);
+    }
+
+    // Save consumer data
+    const r2 = await fetch('/api/consumer-data/save/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+      body: JSON.stringify({ monthly_id: currentMonthlyId, utilisations, counts })
+    });
+    const d2 = await r2.json();
+    if (!d2.success) throw new Error(d2.error);
+
+    btn.innerHTML = '<i class="fas fa-check"></i> Draft Saved!';
+    btn.style.background = 'var(--nea-green)';
+    setTimeout(() => {
+      btn.innerHTML = '<i class="fas fa-save"></i> Save Draft';
+      btn.style.background = '';
+      btn.disabled = false;
+    }, 2000);
+
+    // Update live calcs
+    updateTotals();
+    updateTotalCount();
+    return true;
+  } catch (err) {
+    btn.innerHTML = '<i class="fas fa-exclamation-circle"></i> Error: ' + err.message;
+    btn.style.background = 'var(--nea-red)';
+    btn.disabled = false;
+    setTimeout(() => {
+      btn.innerHTML = '<i class="fas fa-save"></i> Save Draft';
+      btn.style.background = '';
+    }, 3000);
+    return false;
+  }
+}
+
+// Initial calculation on load
+document.querySelectorAll('#import-table tbody tr, #export-table tbody tr').forEach(row => {
+  const prEl = row.querySelector('.present-r');
+  const prevEl = row.querySelector('.previous-r');
+  const uc = row.querySelector('.unit-cell');
+  const dc = row.querySelector('.diff-cell');
+  if (!prEl || !prevEl || !uc || !dc) return;
+  const present = getVal(prEl);
+  const previous = getVal(prevEl);
+  const mf = getVal(row.querySelector('.mf-val'));
+  const presentNum = parseFloat(prEl.value);
+  const previousNum = parseFloat(prevEl.value);
+  if (Number.isFinite(presentNum) && Number.isFinite(previousNum)) {
+    dc.textContent = (presentNum - previousNum).toFixed(3);
+    uc.textContent = ((presentNum - previousNum) * mf).toFixed(2);
+  }
+});
+updateTotals();
+updateTotalCount();
+
+async function submitReportFromData() {
+  if (!canEdit) return false;
+
+  // Save first, and only submit if saving succeeded.
+  const ok = await saveAllData();
+  if (!ok) return false;
+
+  if (!confirm('Are you sure you want to submit this report for provincial review? After submission, you will not be able to edit the data.')) {
+    return false;
+  }
+
+  // Create form and submit
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = `/reports/{{ report.pk }}/submit/`;
+
+  const csrfTokenInput = document.querySelector('[name=csrfmiddlewaretoken]');
+  const csrfTokenValue = csrfTokenInput ? csrfTokenInput.value : '';
+  const csrfInput = document.createElement('input');
+  csrfInput.type = 'hidden';
+  csrfInput.name = 'csrfmiddlewaretoken';
+  csrfInput.value = csrfTokenValue;
+
+  const remarksInput = document.createElement('input');
+  remarksInput.type = 'hidden';
+  remarksInput.name = 'remarks';
+  remarksInput.value = '';
+
+  form.appendChild(csrfInput);
+  form.appendChild(remarksInput);
+  document.body.appendChild(form);
+  form.submit();
+
+  return true;
+}
+</script>
+{% endblock %}

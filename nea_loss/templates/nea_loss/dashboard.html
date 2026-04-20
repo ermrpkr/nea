@@ -1,0 +1,982 @@
+{% extends 'nea_loss/base.html' %}
+{% load nea_filters %}
+{% block title %}Dashboard — NEA Loss System{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block breadcrumb %}Overview &rsaquo; Current Fiscal Year{% endblock %}
+
+{% block content %}
+<!-- Welcome Banner -->
+<div style="background:linear-gradient(135deg, #1B4F72, #2E86C1); border-radius:14px; padding:24px 28px; margin-bottom:24px; color:white; display:flex; align-items:center; justify-content:space-between;">
+  <div>
+    <div style="font-size:13px; opacity:0.75; margin-bottom:4px;">{{ user.get_role_display }}</div>
+    <div style="font-size:22px; font-weight:700;">Welcome, {{ user.full_name }} 👋</div>
+    <div style="font-size:13px; opacity:0.7; margin-top:6px;">
+      {% if active_fy %}Fiscal Year {{ active_fy.year_bs }} &nbsp;|&nbsp; Loss Target: {{ active_fy.loss_target_percent }}%{% endif %}
+    </div>
+  </div>
+  <div style="text-align:right;">
+    <div style="font-size:12px; opacity:0.6; margin-bottom:4px;">System Date</div>
+    <div id="live-clock" style="font-size:22px; font-weight:600; font-variant-numeric:tabular-nums;"></div>
+    <div id="live-date" style="font-size:12px; opacity:0.7;"></div>
+  </div>
+</div>
+
+<!-- STAT CARDS -->
+{% if user.is_superuser %}
+<div class="card mb-24">
+  <div class="card-header admin-console-header">
+    <h2><i class="fas fa-shield-halved" style="color:var(--nea-red);margin-right:8px;"></i>System Admin Console</h2>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+      <a href="{% url 'user_list' %}" class="btn btn-outline btn-sm"><i class="fas fa-user-cog"></i> Manage Users</a>
+      <a href="{% url 'report_list' %}" class="btn btn-outline btn-sm"><i class="fas fa-file-alt"></i> All Reports</a>
+      <a href="{% url 'analytics' %}" class="btn btn-outline btn-sm"><i class="fas fa-chart-line"></i> Analytics</a>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="admin-console-metric-grid">
+      <div class="admin-console-metric-box">
+        <div style="font-size:28px; font-weight:800; color:var(--nea-blue);">{{ admin_total_users }}</div>
+        <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">Total Users</div>
+      </div>
+      <div class="admin-console-metric-box">
+        <div style="font-size:28px; font-weight:800; color:var(--nea-green);">{{ admin_reports_total }}</div>
+        <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">Reports (Active FY)</div>
+      </div>
+      <div class="admin-console-metric-box">
+        <div style="font-size:28px; font-weight:800; color:var(--nea-red);">{{ admin_overall_loss_pct|floatformat:2 }}%</div>
+        <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">Overall Loss %</div>
+      </div>
+    </div>
+
+    <div class="admin-console-section-title">Recent System Activity</div>
+    <div class="table-wrap">
+      <table class="data-table admin-console-activity-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Action</th>
+            <th>Model</th>
+            <th>Description</th>
+            <th>When</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in admin_recent_audits %}
+          <tr>
+            <td>{{ a.user.username|default:"—" }}</td>
+            <td><span class="badge badge-primary">{{ a.action }}</span></td>
+            <td>{{ a.model_name }}</td>
+            <td style="max-width:420px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ a.description }}</td>
+            <td style="white-space:nowrap;">{{ a.timestamp|date:"d M Y H:i" }}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="5" style="text-align:center; color:var(--text-muted);">No audit logs yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if user.is_top_management or user.is_staff %}
+<!-- ═══ MD / DMD / DIRECTOR: Two-panel Explorer Dashboard ═══ -->
+<div style="display:grid;grid-template-columns:300px 1fr;gap:0;min-height:calc(100vh - 180px);border:1px solid var(--border-color);border-radius:14px;overflow:hidden;background:white;">
+
+  <!-- ── LEFT SIDEBAR ── -->
+  <div style="background:#0A1628;color:white;display:flex;flex-direction:column;overflow:hidden;">
+
+    <!-- Sidebar header -->
+    <div style="padding:16px 18px;border-bottom:1px solid rgba(255,255,255,0.1);">
+      <div style="font-size:11px;opacity:0.55;letter-spacing:0.8px;text-transform:uppercase;margin-bottom:4px;">FY {{ active_fy.year_bs }}</div>
+      <div style="font-size:15px;font-weight:700;">Report Explorer</div>
+      <div style="font-size:11px;opacity:0.5;margin-top:2px;">NEA Target: {{ nea_target_pct }}%</div>
+    </div>
+
+    <!-- Search box -->
+    <div style="padding:12px 14px;border-bottom:1px solid rgba(255,255,255,0.08);">
+      <input id="sb-search" type="text" placeholder="🔍  Search DC or Province…"
+             oninput="sbFilter()"
+             style="width:100%;padding:8px 12px;border-radius:8px;border:none;background:rgba(255,255,255,0.1);color:white;font-size:13px;outline:none;box-sizing:border-box;">
+    </div>
+
+    <!-- Mode toggle: DCS / Provinces -->
+    <div style="display:flex;border-bottom:1px solid rgba(255,255,255,0.08);">
+      <button onclick="setSbMode('dc')" id="sb-btn-dc"
+              style="flex:1;padding:10px;border:none;background:rgba(255,255,255,0.12);color:white;font-size:12px;font-weight:600;cursor:pointer;border-bottom:2px solid #2E86C1;">
+        <i class="fas fa-building" style="margin-right:5px;"></i>DCS
+      </button>
+      <button onclick="setSbMode('prov')" id="sb-btn-prov"
+              style="flex:1;padding:10px;border:none;background:transparent;color:rgba(255,255,255,0.6);font-size:12px;font-weight:600;cursor:pointer;">
+        <i class="fas fa-map-marker-alt" style="margin-right:5px;"></i>Provinces
+      </button>
+    </div>
+
+    <!-- DC List -->
+    <div id="sb-dc-list" style="overflow-y:auto;flex:1;">
+      {% for dc_name, dc_info in dc_monthly_detail.items %}
+      <div class="sb-dc-item" data-name="{{ dc_name|lower }}"
+           onclick="showDCDetail('{{ dc_name|escapejs }}')"
+           style="padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;transition:background 0.1s;"
+           onmouseover="this.style.background='rgba(255,255,255,0.08)'"
+           onmouseout="if(currentDC!='{{ dc_name|escapejs }}')this.style.background=''">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div>
+            <div style="font-size:13px;font-weight:500;color:white;">{{ dc_name }}</div>
+            <div style="font-size:10px;opacity:0.5;margin-top:2px;">{{ dc_info.province }}</div>
+          </div>
+          {% with last=dc_info.months|last %}
+          {% if last %}
+          <div style="text-align:right;">
+            <div style="font-size:12px;font-weight:700;
+              color:{% if last.cumul_loss_pct > nea_target_pct %}#FF6B6B{% else %}#6BCB77{% endif %};">
+              {{ last.cumul_loss_pct|floatformat:2 }}%
+            </div>
+            <div style="font-size:10px;opacity:0.4;">cum. loss</div>
+          </div>
+          {% endif %}
+          {% endwith %}
+        </div>
+      </div>
+      {% empty %}
+      <div style="padding:24px 16px;text-align:center;opacity:0.4;font-size:13px;">No approved reports yet.</div>
+      {% endfor %}
+    </div>
+
+    <!-- Province List -->
+    <div id="sb-prov-list" style="display:none;overflow-y:auto;flex:1;">
+      {% for prov_name, prov_months in prov_monthly_detail.items %}
+      <div class="sb-prov-item" data-name="{{ prov_name|lower }}"
+           onclick="showProvDetail('{{ prov_name|escapejs }}')"
+           style="padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;transition:background 0.1s;"
+           onmouseover="this.style.background='rgba(255,255,255,0.08)'"
+           onmouseout="if(currentProv!='{{ prov_name|escapejs }}')this.style.background=''">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="font-size:13px;font-weight:500;color:white;">{{ prov_name }}</div>
+          {% with last=prov_months|last %}
+          {% if last %}
+          <div style="font-size:12px;font-weight:700;
+            color:{% if last.cumul_loss_pct > nea_target_pct %}#FF6B6B{% else %}#6BCB77{% endif %};">
+            {{ last.cumul_loss_pct|floatformat:2 }}%
+          </div>
+          {% endif %}
+          {% endwith %}
+        </div>
+      </div>
+      {% empty %}
+      <div style="padding:24px 16px;text-align:center;opacity:0.4;font-size:13px;">No approved reports yet.</div>
+      {% endfor %}
+    </div>
+
+  </div><!-- end left sidebar -->
+
+  <!-- ── RIGHT MAIN PANEL ── -->
+  <div style="display:flex;flex-direction:column;overflow:hidden;">
+
+    <!-- Top summary strip -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--border-color);">
+      <div style="padding:14px 18px;border-right:1px solid var(--border-color);">
+        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Total Received</div>
+        <div style="font-size:18px;font-weight:700;color:var(--nea-blue);">{{ total_received_kwh|floatformat:0 }}</div>
+        <div style="font-size:10px;color:var(--text-muted);">kWh</div>
+      </div>
+      <div style="padding:14px 18px;border-right:1px solid var(--border-color);">
+        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Total Loss</div>
+        <div style="font-size:18px;font-weight:700;color:var(--nea-red);">{{ total_loss_kwh|floatformat:0 }}</div>
+        <div style="font-size:10px;color:{% if overall_loss_pct > nea_target_pct %}var(--nea-red){% else %}var(--nea-green){% endif %};">{{ overall_loss_pct|floatformat:4 }}%</div>
+      </div>
+      <div style="padding:14px 18px;border-right:1px solid var(--border-color);">
+        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Approved DCs</div>
+        <div style="font-size:18px;font-weight:700;color:#9B59B6;">{{ reports_approved }}</div>
+        <div style="font-size:10px;color:var(--text-muted);">of {{ total_dc_count }} total</div>
+      </div>
+      <div style="padding:14px 18px;">
+        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Pending Review</div>
+        <div style="font-size:18px;font-weight:700;color:var(--nea-yellow);">{{ reports_submitted }}</div>
+        <div style="font-size:10px;color:var(--text-muted);">awaiting approval</div>
+      </div>
+    </div>
+
+    <!-- Main scrollable content area -->
+    <div style="flex:1;overflow-y:auto;padding:20px;">
+
+      <!-- Default view: monthly trend chart + province table -->
+      <div id="default-view">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+          <div class="card">
+            <div class="card-header"><h2><i class="fas fa-chart-line" style="color:var(--nea-blue-mid);margin-right:8px;"></i>Monthly Loss Trend (All DCs)</h2></div>
+            <div class="card-body"><div style="height:220px;position:relative;"><canvas id="mgmtTrendChart"></canvas></div></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h2><i class="fas fa-chart-bar" style="color:var(--nea-red);margin-right:8px;"></i>Province-wise Loss %</h2></div>
+            <div class="card-body"><div style="height:220px;position:relative;"><canvas id="mgmtProvChart"></canvas></div></div>
+          </div>
+        </div>
+
+        <!-- Province summary table -->
+        <div class="card">
+          <div class="card-header"><h2><i class="fas fa-map-marked-alt" style="color:var(--nea-blue-mid);margin-right:8px;"></i>Province Summary — Click a DC or Province in the sidebar to drill down</h2></div>
+          <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+              <thead>
+                <tr style="background:#EBF5FB;">
+                  <th style="padding:9px 14px;text-align:left;font-size:11px;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border-color);">Province</th>
+                  <th style="padding:9px 10px;text-align:right;font-size:11px;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border-color);">DCs Approved</th>
+                  <th style="padding:9px 10px;text-align:right;font-size:11px;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border-color);">Received (kWh)</th>
+                  <th style="padding:9px 10px;text-align:right;font-size:11px;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border-color);">Loss (kWh)</th>
+                  <th style="padding:9px 10px;text-align:right;font-size:11px;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border-color);">Loss %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for p in provincial_data %}
+                <tr style="border-bottom:1px solid #F1F5F9;cursor:pointer;"
+                    onclick="setSbMode('prov');showProvDetail('{{ p.name|escapejs }}')"
+                    onmouseover="this.style.background='#EBF5FB'" onmouseout="this.style.background=''">
+                  <td style="padding:9px 14px;font-weight:600;">{{ p.name }}</td>
+                  <td style="padding:9px 10px;text-align:right;color:var(--text-muted);">{{ p.approved_count }}</td>
+                  <td style="padding:9px 10px;text-align:right;font-variant-numeric:tabular-nums;">{{ p.received|floatformat:2 }}</td>
+                  <td style="padding:9px 10px;text-align:right;color:var(--nea-red);font-variant-numeric:tabular-nums;">{{ p.loss_kwh|floatformat:2 }}</td>
+                  <td style="padding:9px 10px;text-align:right;font-weight:700;
+                    color:{% if p.loss_pct > nea_target_pct %}var(--nea-red){% else %}var(--nea-green){% endif %};">
+                    {{ p.loss_pct|floatformat:4 }}%
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- DC Detail view (shown when a DC is clicked in sidebar) -->
+      <div id="dc-detail-view" style="display:none;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+          <button onclick="backToDefault()" style="padding:6px 14px;border:1px solid var(--border-color);border-radius:7px;background:white;cursor:pointer;font-size:13px;">
+            <i class="fas fa-arrow-left"></i> Back
+          </button>
+          <div>
+            <div id="dc-detail-title" style="font-size:18px;font-weight:700;color:var(--nea-blue);"></div>
+            <div id="dc-detail-subtitle" style="font-size:12px;color:var(--text-muted);"></div>
+          </div>
+          <a id="dc-detail-link" href="#" class="btn btn-outline btn-sm" style="margin-left:auto;">
+            <i class="fas fa-eye"></i> View Full Report
+          </a>
+        </div>
+
+        <!-- DC monthly table -->
+        <div class="card mb-16">
+          <div class="card-header"><h2><i class="fas fa-table" style="margin-right:8px;"></i>Month-wise Report</h2></div>
+          <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:12.5px;" id="dc-month-table">
+              <thead>
+                <tr style="background:#0A1628;color:white;">
+                  <th style="padding:9px 14px;text-align:left;font-size:11px;text-transform:uppercase;">Month</th>
+                  <th style="padding:9px 10px;text-align:right;font-size:11px;text-transform:uppercase;">Received (kWh)</th>
+                  <th style="padding:9px 10px;text-align:right;font-size:11px;text-transform:uppercase;">Utilised (kWh)</th>
+                  <th style="padding:9px 10px;text-align:right;font-size:11px;text-transform:uppercase;">Loss (kWh)</th>
+                  <th style="padding:9px 10px;text-align:right;font-size:11px;text-transform:uppercase;">Monthly Loss %</th>
+                  <th style="padding:9px 10px;text-align:right;font-size:11px;text-transform:uppercase;">Cumulative %</th>
+                </tr>
+              </thead>
+              <tbody id="dc-month-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- DC loss trend chart -->
+        <div class="card">
+          <div class="card-header"><h2><i class="fas fa-chart-line" style="margin-right:8px;"></i>Loss % Trend</h2></div>
+          <div class="card-body"><div style="height:200px;position:relative;"><canvas id="dcTrendChart"></canvas></div></div>
+        </div>
+      </div>
+
+      <!-- Province Detail view -->
+      <div id="prov-detail-view" style="display:none;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+          <button onclick="backToDefault()" style="padding:6px 14px;border:1px solid var(--border-color);border-radius:7px;background:white;cursor:pointer;font-size:13px;">
+            <i class="fas fa-arrow-left"></i> Back
+          </button>
+          <div>
+            <div id="prov-detail-title" style="font-size:18px;font-weight:700;color:var(--nea-blue);"></div>
+            <div style="font-size:12px;color:var(--text-muted);">Month-wise aggregated data (all approved DCs in this province)</div>
+          </div>
+        </div>
+
+        <div class="card mb-16">
+          <div class="card-header"><h2><i class="fas fa-table" style="margin-right:8px;"></i>Province Month-wise Report</h2></div>
+          <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+              <thead>
+                <tr style="background:#0A1628;color:white;">
+                  <th style="padding:9px 14px;text-align:left;font-size:11px;text-transform:uppercase;">Month</th>
+                  <th style="padding:9px 10px;text-align:right;font-size:11px;text-transform:uppercase;">Received (kWh)</th>
+                  <th style="padding:9px 10px;text-align:right;font-size:11px;text-transform:uppercase;">Utilised (kWh)</th>
+                  <th style="padding:9px 10px;text-align:right;font-size:11px;text-transform:uppercase;">Loss (kWh)</th>
+                  <th style="padding:9px 10px;text-align:right;font-size:11px;text-transform:uppercase;">Monthly Loss %</th>
+                  <th style="padding:9px 10px;text-align:right;font-size:11px;text-transform:uppercase;">Cumulative %</th>
+                </tr>
+              </thead>
+              <tbody id="prov-month-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h2><i class="fas fa-chart-line" style="margin-right:8px;"></i>Province Loss Trend</h2></div>
+          <div class="card-body"><div style="height:200px;position:relative;"><canvas id="provTrendChart"></canvas></div></div>
+        </div>
+      </div>
+
+    </div><!-- end scrollable -->
+  </div><!-- end right panel -->
+</div><!-- end two-panel grid -->
+{% elif user.is_provincial %}
+<!-- Provincial Dashboard: Excel-style month-wise report -->
+
+<!-- Header bar: pending review counts -->
+{% if reports_submitted %}
+<div class="alert" style="background:#FEF9E7;border:1px solid #F39C12;color:#7D6608;border-radius:10px;padding:12px 20px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+  <div><i class="fas fa-clock" style="margin-right:6px;color:#F39C12;"></i><strong>{{ reports_submitted }}</strong> report(s) pending your review.</div>
+  <a href="{% url 'report_list' %}" class="btn btn-outline btn-sm" style="border-color:#F39C12;color:#7D6608;">Review Now -></a>
+</div>
+{% endif %}
+
+<!-- DC-wise month-wise loss table (matches Excel format) -->
+{% if dc_report_table %}
+{% for row in dc_report_table %}
+<div class="card mb-16" style="overflow:hidden;">
+  <!-- DC header -->
+  <div class="card-header" style="background:linear-gradient(90deg,#1B4F72,#2E86C1);color:white;cursor:pointer;user-select:none;"
+       onclick="toggleProv('prov-{{ forloop.counter }}')">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <i class="fas fa-building"></i>
+      <h2 style="color:white;margin:0;">{{ row.dc.name }}</h2>
+      {% if row.report %}
+      <span class="badge" style="background:rgba(255,255,255,0.2);color:white;font-size:11px;">
+        {{ row.report.get_status_display }}
+      </span>
+      {% else %}
+      <span class="badge" style="background:rgba(255,100,100,0.35);color:white;font-size:11px;">No Report</span>
+      {% endif %}
+    </div>
+    <i class="fas fa-chevron-down" id="icon-prov-{{ forloop.counter }}" style="transition:transform 0.2s;"></i>
+  </div>
+
+  <div id="prov-{{ forloop.counter }}" style="display:none;">
+    {% if row.has_data %}
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:700px;">
+        <thead>
+          <tr style="background:#EBF5FB;">
+            <th style="padding:9px 14px;text-align:left;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;border-bottom:1px solid var(--border-color);min-width:180px;">Description</th>
+            {% for mr in row.month_rows %}
+            <th style="padding:9px 10px;text-align:right;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;border-bottom:1px solid var(--border-color);min-width:90px;">{{ mr.month_name }}</th>
+            {% empty %}
+            <th style="padding:9px 10px;text-align:right;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;border-bottom:1px solid var(--border-color);min-width:90px;">No Data</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Received Units -->
+          <tr>
+            <td style="padding:8px 14px;font-weight:600;color:var(--nea-blue);border-bottom:1px solid #F1F5F9;">Total Received Unit (kWh)</td>
+            {% for mr in row.month_rows %}
+            <td style="padding:8px 10px;text-align:right;border-bottom:1px solid #F1F5F9;font-variant-numeric:tabular-nums;">
+              {% if mr.received is not None %}{{ mr.received|floatformat:2 }}{% else %}<span style="color:var(--text-muted);">-</span>{% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          <!-- Sold Units -->
+          <tr style="background:#F9FFFE;">
+            <td style="padding:8px 14px;font-weight:600;color:var(--nea-green);border-bottom:1px solid #F1F5F9;">Sold Unit / Utilised (kWh)</td>
+            {% for mr in row.month_rows %}
+            <td style="padding:8px 10px;text-align:right;border-bottom:1px solid #F1F5F9;font-variant-numeric:tabular-nums;color:var(--nea-green);">
+              {% if mr.sold is not None %}{{ mr.sold|floatformat:2 }}{% else %}<span style="color:var(--text-muted);">-</span>{% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          <!-- Loss Units -->
+          <tr>
+            <td style="padding:8px 14px;font-weight:600;color:var(--nea-red);border-bottom:1px solid #F1F5F9;">Loss Unit (kWh)</td>
+            {% for mr in row.month_rows %}
+            <td style="padding:8px 10px;text-align:right;border-bottom:1px solid #F1F5F9;font-variant-numeric:tabular-nums;color:var(--nea-red);">
+              {% if mr.loss_unit is not None %}{{ mr.loss_unit|floatformat:2 }}{% else %}<span style="color:var(--text-muted);">-</span>{% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          <!-- Monthly Loss % -->
+          <tr style="background:#FFF8F8;">
+            <td style="padding:8px 14px;font-weight:600;border-bottom:1px solid #F1F5F9;">Monthly Loss %</td>
+            {% for mr in row.month_rows %}
+            <td style="padding:8px 10px;text-align:right;border-bottom:1px solid #F1F5F9;font-weight:700;
+              {% if mr.monthly_loss_pct is not None and mr.target is not None and mr.monthly_loss_pct > mr.target %}color:var(--nea-red);
+              {% elif mr.monthly_loss_pct is not None %}color:var(--nea-green);{% endif %}">
+              {% if mr.monthly_loss_pct is not None %}{{ mr.monthly_loss_pct|floatformat:4 }}%{% else %}<span style="color:var(--text-muted);">-</span>{% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          <!-- Cumulative Loss % -->
+          <tr style="background:#F0F9FF;">
+            <td style="padding:8px 14px;font-weight:700;border-bottom:1px solid #F1F5F9;color:var(--nea-blue);">Cumulative Loss % (YTD)</td>
+            {% for mr in row.month_rows %}
+            <td style="padding:8px 10px;text-align:right;border-bottom:1px solid #F1F5F9;font-weight:700;
+              {% if mr.cumulative_loss_pct is not None and mr.target is not None and mr.cumulative_loss_pct > mr.target %}color:var(--nea-red);
+              {% elif mr.cumulative_loss_pct is not None %}color:var(--nea-blue);{% endif %}">
+              {% if mr.cumulative_loss_pct is not None %}{{ mr.cumulative_loss_pct|floatformat:4 }}%{% else %}<span style="color:var(--text-muted);">-</span>{% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          <!-- Provincial Target (if set) -->
+          <tr style="background:#FEFCE8;border-top:2px dashed #F39C12;">
+            <td style="padding:8px 14px;font-weight:600;color:#856404;border-bottom:1px solid #F1F5F9;">
+              <i class="fas fa-bullseye" style="margin-right:5px;color:#F39C12;"></i>Provincial Target %
+            </td>
+            {% for mr in row.month_rows %}
+            <td style="padding:8px 10px;text-align:right;border-bottom:1px solid #F1F5F9;font-weight:700;color:#856404;">
+              {% if mr.target is not None %}{{ mr.target|floatformat:3 }}%
+              {% else %}<span style="color:var(--text-muted);font-weight:400;">-</span>{% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    {% if row.report %}
+    <div style="padding:10px 16px;background:#F8FAFC;border-top:1px solid var(--border-color);display:flex;gap:10px;justify-content:flex-end;">
+      {% if row.report.status in 'SUBMITTED PROVINCIAL_REVIEWED' %}
+      <a href="{% if row.report.pk %}{% url 'report_detail' row.report.pk %}{% else %}#{% endif %}" class="btn btn-primary btn-sm"><i class="fas fa-check-double"></i> Review</a>
+      {% endif %}
+    </div>
+    {% endif %}
+    {% else %}
+    <div style="padding:28px;text-align:center;color:var(--text-muted);font-size:13px;">
+      <i class="fas fa-info-circle" style="margin-right:6px;"></i>No approved report data for {{ row.dc.name }} yet.
+      {% if row.report %}
+      <a href="{% if row.report.pk %}{% url 'report_detail' row.report.pk %}{% else %}#{% endif %}" style="margin-left:8px;">View Report ({{ row.report.get_status_display }}) -></a>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+{% else %}
+<div class="card" style="text-align:center;padding:48px;">
+  <div style="font-size:48px;margin-bottom:16px;">:notes:</div>
+  <div style="font-size:18px;font-weight:600;margin-bottom:8px;">No DC Reports Yet</div>
+  <div style="color:var(--text-muted);font-size:14px;">Once DCs submit and approve their reports, the month-wise summary will appear here.</div>
+</div>
+{% endif %}
+{% else %}
+<!-- DC Level Dashboard — Excel-style full 12-month report -->
+
+{% if distribution_center %}
+<div style="background:linear-gradient(135deg,#0A1628,#1B4F72);border-radius:14px;padding:20px 28px;margin-bottom:20px;color:white;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+  <div>
+    <div style="font-size:12px;opacity:0.6;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Distribution Center</div>
+    <div style="font-size:22px;font-weight:700;">{{ distribution_center.name }}</div>
+    <div style="font-size:13px;opacity:0.65;margin-top:4px;">{{ distribution_center.provincial_office.name }}</div>
+  </div>
+  <div style="text-align:right;">
+    {% if nea_target_pct %}
+    <div style="font-size:11px;opacity:0.6;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">NEA Overall Target</div>
+    <div style="font-size:28px;font-weight:700;">{{ nea_target_pct }}%</div>
+    {% endif %}
+    {% if current_report %}
+    <div style="margin-top:8px;"><span class="badge badge-{{ current_report.status|lower }}" style="font-size:12px;">{{ current_report.get_status_display }}</span></div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if current_report %}
+
+<!-- Main Excel-style table: rows = descriptions, columns = all 12 months -->
+<div class="card" style="overflow:hidden;">
+  <div class="card-header" style="background:#F7FAFC;border-bottom:2px solid var(--nea-blue);">
+    <h2 style="color:var(--nea-blue);"><i class="fas fa-table" style="margin-right:8px;"></i>Monthly Loss Analysis Report — {{ active_fy.year_bs }}</h2>
+  </div>
+
+  <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:900px;">
+      <thead>
+        <tr style="background:#0A1628;color:white;">
+          <th style="padding:10px 14px;text-align:left;min-width:190px;position:sticky;left:0;background:#0A1628;z-index:3;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;">Description</th>
+          {% for col in dc_monthly_cols %}
+          <th style="padding:10px 8px;text-align:right;min-width:88px;font-size:11px;text-transform:uppercase;letter-spacing:0.3px;
+            {% if not col.has_data %}opacity:0.45;{% endif %}">
+            {{ col.month_name }}
+            {% if not col.has_data %}<div style="font-size:9px;opacity:0.7;font-weight:400;">—</div>{% endif %}
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+
+        <!-- Row a: Import -->
+        <tr>
+          <td style="padding:8px 14px;font-weight:600;border-bottom:1px solid #F1F5F9;position:sticky;left:0;background:white;z-index:1;color:var(--nea-blue);">a. Total Import (kWh)</td>
+          {% for col in dc_monthly_cols %}
+          <td style="padding:8px 8px;text-align:right;border-bottom:1px solid #F1F5F9;font-variant-numeric:tabular-nums;{% if not col.has_data %}color:#DDD;{% endif %}">
+            {% if col.import_kwh is not None %}{{ col.import_kwh|floatformat:2 }}{% else %}—{% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+
+        <!-- Row b: Export -->
+        <tr style="background:#FFFDF5;">
+          <td style="padding:8px 14px;font-weight:600;border-bottom:1px solid #F1F5F9;position:sticky;left:0;background:#FFFDF5;z-index:1;color:#B7770D;">b. Total Export (kWh)</td>
+          {% for col in dc_monthly_cols %}
+          <td style="padding:8px 8px;text-align:right;border-bottom:1px solid #F1F5F9;font-variant-numeric:tabular-nums;color:#B7770D;{% if not col.has_data %}opacity:0.3;{% endif %}">
+            {% if col.export_kwh is not None %}{{ col.export_kwh|floatformat:2 }}{% else %}—{% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+
+        <!-- Row c: Net Received -->
+        <tr style="background:#EBF5FB;">
+          <td style="padding:9px 14px;font-weight:700;border-bottom:2px solid #D6EAF8;position:sticky;left:0;background:#EBF5FB;z-index:1;color:var(--nea-blue);">c. Net Received (a−b) kWh</td>
+          {% for col in dc_monthly_cols %}
+          <td style="padding:9px 8px;text-align:right;border-bottom:2px solid #D6EAF8;font-weight:700;font-variant-numeric:tabular-nums;
+            {% if col.has_data %}color:var(--nea-blue);{% else %}color:#DDD;{% endif %}">
+            {% if col.received is not None %}{{ col.received|floatformat:2 }}{% else %}—{% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+
+        <!-- Row d: Sold -->
+        <tr>
+          <td style="padding:8px 14px;font-weight:600;border-bottom:1px solid #F1F5F9;position:sticky;left:0;background:white;z-index:1;color:var(--nea-green);">d. Sold / Utilised (kWh)</td>
+          {% for col in dc_monthly_cols %}
+          <td style="padding:8px 8px;text-align:right;border-bottom:1px solid #F1F5F9;font-variant-numeric:tabular-nums;
+            {% if col.has_data %}color:var(--nea-green);{% else %}color:#DDD;{% endif %}">
+            {% if col.sold is not None %}{{ col.sold|floatformat:2 }}{% else %}—{% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+
+        <!-- Row e: Loss Unit -->
+        <tr style="background:#FFF5F5;">
+          <td style="padding:8px 14px;font-weight:700;border-bottom:2px solid #FADBD8;position:sticky;left:0;background:#FFF5F5;z-index:1;color:var(--nea-red);">e. Loss Unit (c−d) kWh</td>
+          {% for col in dc_monthly_cols %}
+          <td style="padding:8px 8px;text-align:right;border-bottom:2px solid #FADBD8;font-weight:600;font-variant-numeric:tabular-nums;
+            {% if col.has_data %}color:var(--nea-red);{% else %}color:#DDD;{% endif %}">
+            {% if col.loss_unit is not None %}{{ col.loss_unit|floatformat:2 }}{% else %}—{% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+
+        <!-- Row f: Monthly Loss % -->
+        <tr>
+          <td style="padding:9px 14px;font-weight:700;border-bottom:1px solid #F1F5F9;position:sticky;left:0;background:white;z-index:1;">
+            f. Monthly Loss %
+            <div style="font-size:9px;color:var(--text-muted);font-weight:400;">(e÷c×100, this month only)</div>
+          </td>
+          {% for col in dc_monthly_cols %}
+          <td style="padding:9px 8px;text-align:right;border-bottom:1px solid #F1F5F9;font-weight:700;font-variant-numeric:tabular-nums;
+            {% if col.has_data and col.monthly_loss_pct is not None %}
+              {% if col.prov_target and col.monthly_loss_pct > col.prov_target %}color:var(--nea-red);
+              {% elif col.prov_target %}color:var(--nea-green);
+              {% else %}color:var(--nea-blue);{% endif %}
+            {% else %}color:#DDD;{% endif %}">
+            {% if col.monthly_loss_pct is not None %}{{ col.monthly_loss_pct|floatformat:4 }}%{% else %}—{% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+
+        <!-- Row g: Cumulative Loss % -->
+        <tr style="background:#FFF5F5;">
+          <td style="padding:9px 14px;font-weight:700;border-bottom:1px solid #F1F5F9;position:sticky;left:0;background:#FFF5F5;z-index:1;color:var(--nea-blue);">
+            g. Cumulative Loss %
+            <div style="font-size:9px;color:var(--text-muted);font-weight:400;">(YTD loss ÷ YTD received ×100)</div>
+          </td>
+          {% for col in dc_monthly_cols %}
+          <td style="padding:9px 8px;text-align:right;border-bottom:1px solid #F1F5F9;font-weight:700;font-variant-numeric:tabular-nums;
+            {% if col.has_data and col.cumulative_loss_pct is not None %}
+              {% if col.prov_target and col.cumulative_loss_pct > col.prov_target %}color:var(--nea-red);
+              {% elif col.prov_target %}color:var(--nea-green);
+              {% else %}color:var(--nea-blue);{% endif %}
+            {% else %}color:#DDD;{% endif %}">
+            {% if col.cumulative_loss_pct is not None %}{{ col.cumulative_loss_pct|floatformat:4 }}%{% else %}—{% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+
+        <!-- Row h: Provincial Target -->
+        {% if prov_targets %}
+        <tr style="background:#FEFCE8;border-top:2px dashed #F39C12;">
+          <td style="padding:8px 14px;font-weight:600;border-bottom:1px solid #F5EEC8;position:sticky;left:0;background:#FEFCE8;z-index:1;color:#856404;">
+            <i class="fas fa-bullseye" style="margin-right:5px;color:#F39C12;font-size:10px;"></i>Provincial Target %
+          </td>
+          {% for col in dc_monthly_cols %}
+          <td style="padding:8px 8px;text-align:right;border-bottom:1px solid #F5EEC8;font-weight:700;color:#856404;">
+            {% if col.prov_target is not None %}{{ col.prov_target|floatformat:3 }}%
+            {% else %}<span style="color:#DDD;font-weight:400;">—</span>{% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endif %}
+
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Feeder Slideshow: tabs for each APPROVED month -->
+  {% if approved_months %}
+  <div style="border-top:2px solid var(--border-color);background:#F8FAFC;">
+    <div style="padding:10px 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-right:4px;">Feeder Readings (Approved):</span>
+      {% for col in approved_months %}
+      <button onclick="showFeederTab({{ col.month }})"
+              id="ftab-{{ col.month }}"
+              style="padding:5px 14px;border:1px solid var(--border-color);border-radius:20px;font-size:12px;cursor:pointer;background:white;color:var(--nea-blue);transition:all 0.15s;">
+        {{ col.month_name }}
+      </button>
+      {% endfor %}
+    </div>
+  {% else %}
+  <div style="border-top:2px solid var(--border-color);background:#F8FAFC;">
+    <div style="padding:20px;text-align:center;color:var(--text-muted);">
+      <i class="fas fa-plug" style="font-size:24px;margin-bottom:10px;opacity:0.5;"></i>
+      <div style="font-size:13px;">No approved reports with feeder data available</div>
+      <div style="font-size:11px;margin-top:5px;">Feeder readings will appear here once reports are approved.</div>
+      <!-- Debug info -->
+      <div style="margin-top:15px;padding:10px;background:#f8f9fa;border-radius:5px;text-align:left;font-size:11px;">
+        <strong>Debug Info:</strong><br>
+        Total monthly columns: {{ dc_monthly_cols|length }}<br>
+        {% for col in dc_monthly_cols %}
+        - Month {{ col.month }}: has_data={{ col.has_data }}, status={{ col.status }}, feeders={{ col.feeders|length }}<br>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+    {% for col in approved_months %}
+    <div id="fpanel-{{ col.month }}" style="display:none;border-top:1px solid var(--border-color);">
+      <div style="padding:8px 16px;background:#EBF5FB;font-size:12px;font-weight:600;color:var(--nea-blue);">
+        {{ col.month_name }} — Feeder-wise Meter Readings
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:500px;">
+          <thead>
+            <tr style="background:#F7FAFC;">
+              <th style="padding:7px 12px;text-align:center;font-size:10px;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border-color);width:36px;">#</th>
+              <th style="padding:7px 12px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border-color);">Feeder / Source</th>
+              <th style="padding:7px 10px;text-align:center;font-size:10px;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border-color);">Type</th>
+              <th style="padding:7px 10px;text-align:right;font-size:10px;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border-color);">Prev. Reading</th>
+              <th style="padding:7px 10px;text-align:right;font-size:10px;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border-color);">Pres. Reading</th>
+              <th style="padding:7px 10px;text-align:right;font-size:10px;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border-color);">MF</th>
+              <th style="padding:7px 10px;text-align:right;font-size:10px;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border-color);">Units (kWh)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in col.feeders %}
+            <tr {% if f.is_export %}style="background:#FFFBF0;"{% endif %}>
+              <td style="padding:6px 12px;text-align:center;color:var(--text-muted);border-bottom:1px solid #F8F8F8;">{{ forloop.counter }}</td>
+              <td style="padding:6px 12px;font-weight:500;border-bottom:1px solid #F8F8F8;">{{ f.name }}{% if f.is_export %} <span style="font-size:10px;color:#B7770D;">(Export)</span>{% endif %}</td>
+              <td style="padding:6px 10px;text-align:center;font-size:11px;color:var(--text-muted);border-bottom:1px solid #F8F8F8;">{{ f.type }}</td>
+              <td style="padding:6px 10px;text-align:right;font-variant-numeric:tabular-nums;border-bottom:1px solid #F8F8F8;">{% if f.prev is not None %}{{ f.prev|floatformat:3 }}{% else %}—{% endif %}</td>
+              <td style="padding:6px 10px;text-align:right;font-variant-numeric:tabular-nums;border-bottom:1px solid #F8F8F8;">{% if f.pres is not None %}{{ f.pres|floatformat:3 }}{% else %}<span style="color:var(--nea-red);">Missing</span>{% endif %}</td>
+              <td style="padding:6px 10px;text-align:right;color:var(--text-muted);border-bottom:1px solid #F8F8F8;">{{ f.mf|floatformat:2 }}</td>
+              <td style="padding:6px 10px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;border-bottom:1px solid #F8F8F8;
+                {% if f.is_export %}color:#B7770D;{% else %}color:var(--nea-blue);{% endif %}">
+                {% if f.kwh is not None %}{{ f.kwh|floatformat:2 }}{% else %}—{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% elif current_report.status != 'APPROVED' %}
+  <div style="padding:14px 18px;background:#F8FAFC;border-top:1px solid var(--border-color);font-size:12.5px;color:var(--text-muted);">
+    <i class="fas fa-info-circle" style="margin-right:6px;"></i>Feeder readings will appear here once the report is approved.
+  </div>
+  {% endif %}
+
+</div><!-- end main card -->
+{% endif %}
+
+{% if can_create_loss_report %}
+<div style="text-align:right;margin-top:12px;">
+  <a href="{% if current_report.pk %}{% url 'report_detail' current_report.pk %}{% else %}#{% endif %}" class="btn btn-outline btn-sm"><i class="fas fa-pencil-alt"></i> Enter / Update Data</a>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Live clock
+function updateClock() {
+  const now = new Date();
+  document.getElementById('live-clock').textContent = now.toLocaleTimeString('en-US', {hour12: false});
+  document.getElementById('live-date').textContent = now.toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+// MD/DMD/Director — Two-Panel Explorer Dashboard
+{% if user.is_top_management or user.is_staff %}
+const mgmtTrend   = {{ monthly_trend|safe }};
+const mgmtProvData = {{ provincial_data|safe }};
+const mgmtTarget  = {{ nea_target_pct }};
+const dcData      = {{ dc_monthly_detail|safe }};
+const provData    = {{ prov_monthly_detail|safe }};
+let currentDC   = null;
+let currentProv = null;
+let dcChartInst = null;
+let provChartInst = null;
+
+// ── Sidebar mode toggle ──
+function setSbMode(mode) {
+  document.getElementById('sb-dc-list').style.display   = mode === 'dc'   ? 'block' : 'none';
+  document.getElementById('sb-prov-list').style.display = mode === 'prov' ? 'block' : 'none';
+  document.getElementById('sb-btn-dc').style.background   = mode === 'dc'   ? 'rgba(255,255,255,0.12)' : 'transparent';
+  document.getElementById('sb-btn-dc').style.color        = mode === 'dc'   ? 'white' : 'rgba(255,255,255,0.6)';
+  document.getElementById('sb-btn-dc').style.borderBottom = mode === 'dc'   ? '2px solid #2E86C1' : 'none';
+  document.getElementById('sb-btn-prov').style.background   = mode === 'prov' ? 'rgba(255,255,255,0.12)' : 'transparent';
+  document.getElementById('sb-btn-prov').style.color        = mode === 'prov' ? 'white' : 'rgba(255,255,255,0.6)';
+  document.getElementById('sb-btn-prov').style.borderBottom = mode === 'prov' ? '2px solid #2E86C1' : 'none';
+}
+
+// ── Sidebar search filter ──
+function sbFilter() {
+  const q = document.getElementById('sb-search').value.toLowerCase();
+  document.querySelectorAll('.sb-dc-item').forEach(el => {
+    el.style.display = el.dataset.name.includes(q) ? '' : 'none';
+  });
+  document.querySelectorAll('.sb-prov-item').forEach(el => {
+    el.style.display = el.dataset.name.includes(q) ? '' : 'none';
+  });
+}
+
+// ── Back to default view ──
+function backToDefault() {
+  currentDC = null; currentProv = null;
+  document.getElementById('default-view').style.display    = 'block';
+  document.getElementById('dc-detail-view').style.display  = 'none';
+  document.getElementById('prov-detail-view').style.display = 'none';
+  document.querySelectorAll('.sb-dc-item').forEach(el => el.style.background = '');
+  document.querySelectorAll('.sb-prov-item').forEach(el => el.style.background = '');
+}
+
+// ── Show DC detail ──
+function showDCDetail(dcName) {
+  const dc = dcData[dcName];
+  if (!dc) return;
+  currentDC = dcName;
+
+  // Highlight sidebar item
+  document.querySelectorAll('.sb-dc-item').forEach(el => {
+    el.style.background = el.dataset.name === dcName.toLowerCase() ? 'rgba(46,134,193,0.35)' : '';
+  });
+
+  document.getElementById('default-view').style.display    = 'none';
+  document.getElementById('dc-detail-view').style.display  = 'block';
+  document.getElementById('prov-detail-view').style.display = 'none';
+
+  document.getElementById('dc-detail-title').textContent    = dcName + ' (' + (dc.dc_code||'') + ')';
+  document.getElementById('dc-detail-subtitle').textContent = dc.province || '';
+
+  const link = document.getElementById('dc-detail-link');
+  link.href = '/reports/' + dc.report_pk + '/';
+
+  // Build month table
+  const tbody = document.getElementById('dc-month-tbody');
+  tbody.innerHTML = '';
+  dc.months.forEach(m => {
+    const aboveM = m.monthly_loss_pct > mgmtTarget;
+    const aboveC = m.cumul_loss_pct > mgmtTarget;
+    tbody.innerHTML += `<tr style="border-bottom:1px solid #F1F5F9;">
+      <td style="padding:8px 14px;font-weight:500;">${m.month_name}</td>
+      <td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;">${fmtNum(m.received)}</td>
+      <td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;color:#1E8449;">${fmtNum(m.utilised)}</td>
+      <td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;color:#C0392B;">${fmtNum(m.loss_unit)}</td>
+      <td style="padding:8px 10px;text-align:right;font-weight:700;color:${aboveM?'#C0392B':'#1E8449'};">${m.monthly_loss_pct.toFixed(4)}%</td>
+      <td style="padding:8px 10px;text-align:right;font-weight:700;color:${aboveC?'#C0392B':'#1B4F72'};">${m.cumul_loss_pct.toFixed(4)}%</td>
+    </tr>`;
+  });
+
+  // DC trend chart
+  if (dcChartInst) dcChartInst.destroy();
+  const ctx = document.getElementById('dcTrendChart');
+  if (ctx) {
+    dcChartInst = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: dc.months.map(m => m.month_name),
+        datasets: [
+          { label: 'Monthly Loss %', data: dc.months.map(m => m.monthly_loss_pct),
+            borderColor: '#C0392B', backgroundColor: 'rgba(192,57,43,0.08)',
+            fill: true, tension: 0.4, pointRadius: 5,
+            pointBackgroundColor: dc.months.map(m => m.monthly_loss_pct > mgmtTarget ? '#C0392B' : '#1E8449') },
+          { label: 'Cumulative %', data: dc.months.map(m => m.cumul_loss_pct),
+            borderColor: '#1B4F72', borderDash: [5,4], fill: false, tension: 0.4, pointRadius: 4 },
+          { label: 'Target (' + mgmtTarget + '%)', data: dc.months.map(() => mgmtTarget),
+            borderColor: '#F39C12', borderDash: [8,4], fill: false, pointRadius: 0 },
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { font: {size:11}, usePointStyle: true } } },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: {size:11} } },
+          y: { ticks: { font: {size:11}, callback: v => v.toFixed(2)+'%' }, grid: { color: '#F1F5F9' } }
+        }
+      }
+    });
+  }
+}
+
+// ── Show Province detail ──
+function showProvDetail(provName) {
+  const months = provData[provName];
+  if (!months) return;
+  currentProv = provName;
+
+  document.querySelectorAll('.sb-prov-item').forEach(el => {
+    el.style.background = el.dataset.name === provName.toLowerCase() ? 'rgba(46,134,193,0.35)' : '';
+  });
+
+  document.getElementById('default-view').style.display    = 'none';
+  document.getElementById('dc-detail-view').style.display  = 'none';
+  document.getElementById('prov-detail-view').style.display = 'block';
+  document.getElementById('prov-detail-title').textContent  = provName;
+
+  // Build month table
+  const tbody = document.getElementById('prov-month-tbody');
+  tbody.innerHTML = '';
+  months.forEach(m => {
+    const aboveM = m.monthly_loss_pct > mgmtTarget;
+    const aboveC = m.cumul_loss_pct > mgmtTarget;
+    tbody.innerHTML += `<tr style="border-bottom:1px solid #F1F5F9;">
+      <td style="padding:8px 14px;font-weight:500;">${m.month_name}</td>
+      <td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;">${fmtNum(m.received)}</td>
+      <td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;color:#1E8449;">${fmtNum(m.utilised)}</td>
+      <td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;color:#C0392B;">${fmtNum(m.loss_unit)}</td>
+      <td style="padding:8px 10px;text-align:right;font-weight:700;color:${aboveM?'#C0392B':'#1E8449'};">${m.monthly_loss_pct.toFixed(4)}%</td>
+      <td style="padding:8px 10px;text-align:right;font-weight:700;color:${aboveC?'#C0392B':'#1B4F72'};">${m.cumul_loss_pct.toFixed(4)}%</td>
+    </tr>`;
+  });
+
+  // Province trend chart
+  if (provChartInst) provChartInst.destroy();
+  const ctx = document.getElementById('provTrendChart');
+  if (ctx) {
+    provChartInst = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: months.map(m => m.month_name),
+        datasets: [
+          { label: 'Monthly Loss %', data: months.map(m => m.monthly_loss_pct),
+            borderColor: '#C0392B', backgroundColor: 'rgba(192,57,43,0.08)',
+            fill: true, tension: 0.4, pointRadius: 5,
+            pointBackgroundColor: months.map(m => m.monthly_loss_pct > mgmtTarget ? '#C0392B' : '#1E8449') },
+          { label: 'Cumulative %', data: months.map(m => m.cumul_loss_pct),
+            borderColor: '#1B4F72', borderDash: [5,4], fill: false, tension: 0.4, pointRadius: 4 },
+          { label: 'Target (' + mgmtTarget + '%)', data: months.map(() => mgmtTarget),
+            borderColor: '#F39C12', borderDash: [8,4], fill: false, pointRadius: 0 },
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { font: {size:11}, usePointStyle: true } } },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: {size:11} } },
+          y: { ticks: { font: {size:11}, callback: v => v.toFixed(2)+'%' }, grid: { color: '#F1F5F9' } }
+        }
+      }
+    });
+  }
+}
+
+// ── Overview charts (default view) ──
+const trendMonths = Object.keys(mgmtTrend);
+if (trendMonths.length > 0) {
+  const tCtx = document.getElementById('mgmtTrendChart');
+  if (tCtx) new Chart(tCtx, {
+    type: 'line',
+    data: {
+      labels: trendMonths,
+      datasets: [
+        { label: 'Loss %', data: trendMonths.map(m => mgmtTrend[m].loss_pct),
+          borderColor: '#C0392B', backgroundColor: 'rgba(192,57,43,0.08)',
+          fill: true, tension: 0.4, pointRadius: 5,
+          pointBackgroundColor: trendMonths.map(m => mgmtTrend[m].loss_pct > mgmtTarget ? '#C0392B' : '#1E8449') },
+        { label: 'Target (' + mgmtTarget + '%)', data: trendMonths.map(() => mgmtTarget),
+          borderColor: '#F39C12', borderDash: [8,4], fill: false, pointRadius: 0 },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { font: {size:11}, usePointStyle: true } } },
+      scales: { x: { grid: { display: false }, ticks: { font: {size:11} } },
+                y: { ticks: { font: {size:11}, callback: v => v.toFixed(2)+'%' }, grid: { color: '#F1F5F9' } } }
+    }
+  });
+}
+if (mgmtProvData.length > 0) {
+  const pCtx = document.getElementById('mgmtProvChart');
+  if (pCtx) new Chart(pCtx, {
+    type: 'bar',
+    data: {
+      labels: mgmtProvData.map(p => p.name),
+      datasets: [{ label: 'Loss %', data: mgmtProvData.map(p => p.loss_pct),
+        backgroundColor: mgmtProvData.map(p => p.loss_pct > mgmtTarget ? 'rgba(192,57,43,0.8)' : 'rgba(30,132,73,0.8)'), borderRadius: 4 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { x: { grid: { display: false }, ticks: { font: {size:10} } },
+                y: { ticks: { font: {size:10}, callback: v => v.toFixed(2)+'%' }, grid: { color: '#F1F5F9' } } }
+    }
+  });
+}
+{% endif %}
+
+// DC Dashboard: feeder tab slideshow (all approved months)
+function showFeederTab(monthNum) {
+  // Hide all panels
+  document.querySelectorAll('[id^="fpanel-"]').forEach(el => el.style.display = 'none');
+  // Reset all tab styles
+  document.querySelectorAll('[id^="ftab-"]').forEach(btn => {
+    btn.style.background = 'white';
+    btn.style.color = 'var(--nea-blue)';
+    btn.style.borderColor = 'var(--border-color)';
+  });
+  // Show selected panel
+  const panel = document.getElementById('fpanel-' + monthNum);
+  if (panel) panel.style.display = 'block';
+  // Highlight selected tab
+  const tab = document.getElementById('ftab-' + monthNum);
+  if (tab) {
+    tab.style.background = 'var(--nea-blue)';
+    tab.style.color = 'white';
+    tab.style.borderColor = 'var(--nea-blue)';
+  }
+}
+
+// Provincial Dashboard: collapsible DC sections
+function toggleProv(id) {
+  const el = document.getElementById(id);
+  const icon = document.getElementById('icon-' + id);
+  if (!el) return;
+  const isOpen = el.style.display !== 'none';
+  el.style.display = isOpen ? 'none' : 'block';
+  if (icon) icon.style.transform = isOpen ? '' : 'rotate(180deg)';
+}
+
+// Auto-open the first approved month tab on load
+document.addEventListener('DOMContentLoaded', function() {
+  const firstTab = document.querySelector('[id^="ftab-"]');
+  if (firstTab) {
+    const monthNum = firstTab.id.replace('ftab-', '');
+    showFeederTab(parseInt(monthNum));
+  }
+});
+</script>
+{% endblock %}

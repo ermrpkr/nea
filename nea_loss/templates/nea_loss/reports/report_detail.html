@@ -1,0 +1,263 @@
+{% extends 'nea_loss/base.html' %}
+{% load nea_filters %}
+{% block title %}{{ report.distribution_center.name }} — Loss Report{% endblock %}
+{% block page_title %}{{ report.distribution_center.name }}{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; {{ report.fiscal_year.year_bs }} &rsaquo; {{ report.get_month_display }}{% endblock %}
+
+{% block content %}
+<!-- Report Header Card -->
+<div style="background:linear-gradient(135deg, #0A1628, #1B4F72); border-radius:14px; padding:24px 28px; margin-bottom:24px; color:white; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px;">
+  <div>
+    <div style="font-size:12px; opacity:0.6; letter-spacing:0.5px; text-transform:uppercase; margin-bottom:6px;">Loss Analysis Report</div>
+    <div style="font-size:22px; font-weight:700;">{{ report.distribution_center.name }}</div>
+    <div style="font-size:13px; opacity:0.65; margin-top:4px;">
+      {{ report.distribution_center.provincial_office.name }} &nbsp;|&nbsp; Fiscal Year {{ report.fiscal_year.year_bs }} &nbsp;|&nbsp; {{ report.get_month_display }}
+    </div>
+    <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
+      <span style="background:rgba(255,255,255,0.12); padding:4px 12px; border-radius:20px; font-size:12px;">
+        <i class="fas fa-bullseye"></i> Target: {{ report.fiscal_year.loss_target_percent }}%
+      </span>
+      <span style="background:rgba(255,255,255,0.12); padding:4px 12px; border-radius:20px; font-size:12px;" id="status-badge">
+        <i class="fas fa-circle" style="font-size:7px;"></i> {{ report.get_status_display }}
+      </span>
+    </div>
+  </div>
+  <div style="display:flex; gap:10px; flex-wrap:wrap;">
+    {% if can_edit %}
+    <a href="{% url 'monthly_data' report.pk report.month %}" class="btn btn-outline" style="background:rgba(255,255,255,0.1); border-color:rgba(255,255,255,0.2); color:white;">
+      {% if report.status == 'APPROVED' %}<i class="fas fa-user-shield"></i> Edit (Admin Correction)
+      {% else %}<i class="fas fa-edit"></i> Enter Data{% endif %}
+    </a>
+    {% elif report.status == 'SUBMITTED' or report.status == 'APPROVED' %}
+    <a href="{% url 'monthly_data' report.pk report.month %}" class="btn btn-outline" style="background:rgba(255,255,255,0.1); border-color:rgba(255,255,255,0.2); color:white;">
+      <i class="fas fa-eye"></i> View Data
+    </a>
+    {% endif %}
+    {% if can_approve and report.status == 'SUBMITTED' %}
+    <button onclick="document.getElementById('approve-modal').style.display='flex'" class="btn btn-success">
+      <i class="fas fa-check-double"></i> Approve
+    </button>
+    <button onclick="document.getElementById('reject-modal').style.display='flex'" class="btn btn-danger">
+      <i class="fas fa-times-circle"></i> Reject
+    </button>
+    {% endif %}
+    {% if report.status != 'REJECTED' or not user.is_provincial %}
+    <a href="{% url 'report_print' report.pk %}" class="btn btn-outline" style="background:rgba(255,255,255,0.1); border-color:rgba(255,255,255,0.2); color:white;" target="_blank">
+      <i class="fas fa-print"></i> Print
+    </a>
+    <a href="{% url 'report_export_excel' report.pk %}" class="btn btn-outline" style="background:rgba(255,255,255,0.1); border-color:rgba(255,255,255,0.2); color:white;">
+      <i class="fas fa-file-excel"></i> Excel
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+{% if report.status == 'APPROVED' and can_edit %}
+<div class="alert" style="background:#FEF9E7;border:1px solid #F39C12;color:#856404;border-radius:10px;padding:12px 18px;margin-bottom:16px;display:flex;align-items:center;gap:10px;">
+  <i class="fas fa-exclamation-triangle" style="color:#F39C12;font-size:16px;"></i>
+  <div>
+    <strong>Admin Correction Mode:</strong> This is an approved report. Any changes you make will trigger automatic recalculation of all subsequent months for this DC in the same fiscal year.
+    <button onclick="triggerCascadeRecalc()" class="btn btn-outline btn-sm" style="margin-left:12px;border-color:#F39C12;color:#856404;">
+      <i class="fas fa-sync-alt"></i> Recalculate Now
+    </button>
+  </div>
+</div>
+{% endif %}
+
+<!-- Summary Stats -->
+<div class="stat-grid mb-24">
+  <div class="stat-card blue">
+    <div class="icon"><i class="fas fa-bolt"></i></div>
+    <div class="label">Total Net Received</div>
+    <div class="value">{{ report.total_received_kwh|floatformat:2 }}</div>
+    <div class="sub">kWh — this month total</div>
+  </div>
+  <div class="stat-card green">
+    <div class="icon"><i class="fas fa-plug"></i></div>
+    <div class="label">Total Utilised</div>
+    <div class="value">{{ report.total_utilised_kwh|floatformat:2 }}</div>
+    <div class="sub">kWh — billed to consumers</div>
+  </div>
+  <div class="stat-card red">
+    <div class="icon"><i class="fas fa-exclamation-triangle"></i></div>
+    <div class="label">Total Loss</div>
+    <div class="value">{{ report.total_loss_kwh|floatformat:2 }}</div>
+    <div class="sub">kWh — this month</div>
+  </div>
+  <div class="stat-card {% if report.cumulative_loss_percent > report.fiscal_year.loss_target_percent|div:100 %}red{% else %}green{% endif %}">
+    <div class="icon"><i class="fas fa-percent"></i></div>
+    <div class="label">Cumulative Loss %</div>
+    <div class="value">{{ report.cumulative_loss_percent|multiply:100|floatformat:4 }}%</div>
+    <div class="sub">YTD cumulative — Target: {{ report.fiscal_year.loss_target_percent }}%</div>
+  </div>
+</div>
+
+<!-- Charts Row -->
+<div class="grid-2 mb-24">
+  <div class="card">
+    <div class="card-header"><h2><i class="fas fa-chart-bar" style="color:var(--nea-blue-mid); margin-right:8px;"></i>Monthly Energy Overview</h2></div>
+    <div class="card-body">
+      <div style="height:260px; position:relative;"><canvas id="monthlyBarChart"></canvas></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h2><i class="fas fa-chart-line" style="color:var(--nea-red); margin-right:8px;"></i>Loss Percentage Trend</h2></div>
+    <div class="card-body">
+      <div style="height:260px; position:relative;"><canvas id="lossLineChart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- Remarks -->
+{% if report.remarks %}
+<div class="card mb-24">
+  <div class="card-header"><h2><i class="fas fa-comment-alt" style="margin-right:8px;"></i>Remarks / Notes</h2></div>
+  <div class="card-body" style="font-size:14px; color:var(--text-secondary);">{{ report.remarks }}</div>
+</div>
+{% endif %}
+
+<!-- Approval/Reject Modals -->
+<div id="approve-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+  <div style="background:white; border-radius:14px; padding:28px; width:440px; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+    <h3 style="margin-bottom:12px; color:var(--nea-green);">✅ Approve Report</h3>
+    <p style="font-size:13px; color:var(--text-secondary); margin-bottom:16px;">You are approving the loss report for <strong>{{ report.distribution_center.name }}</strong>, FY {{ report.fiscal_year.year_bs }}.</p>
+    <form method="POST" action="{% url 'report_approve' report.pk %}">
+      {% csrf_token %}
+      <div class="form-group">
+        <label class="form-label">Remarks (optional)</label>
+        <textarea name="remarks" class="form-control" rows="3" placeholder="Add approval remarks..."></textarea>
+      </div>
+      <div style="display:flex; gap:10px; margin-top:16px;">
+        <button type="submit" class="btn btn-success"><i class="fas fa-check"></i> Confirm Approval</button>
+        <button type="button" onclick="document.getElementById('approve-modal').style.display='none'" class="btn btn-outline">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="reject-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+  <div style="background:white; border-radius:14px; padding:28px; width:440px; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+    <h3 style="margin-bottom:12px; color:var(--nea-red);">❌ Reject Report</h3>
+    <p style="font-size:13px; color:var(--text-secondary); margin-bottom:16px;">Please provide a reason for rejection.</p>
+    <form method="POST" action="{% url 'report_reject' report.pk %}">
+      {% csrf_token %}
+      <div class="form-group">
+        <label class="form-label">Reason for Rejection <span style="color:var(--nea-red);">*</span></label>
+        <textarea name="remarks" class="form-control" rows="3" required placeholder="Explain why this report is being rejected..."></textarea>
+      </div>
+      <div style="display:flex; gap:10px; margin-top:16px;">
+        <button type="submit" class="btn btn-danger"><i class="fas fa-times-circle"></i> Reject Report</button>
+        <button type="button" onclick="document.getElementById('reject-modal').style.display='none'" class="btn btn-outline">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const chartData = {{ chart_data_json|safe }};
+const targetPct = {{ target_pct }};
+
+// Monthly Bar Chart
+if (chartData.months.length) {
+  new Chart(document.getElementById('monthlyBarChart'), {
+    type: 'bar',
+    data: {
+      labels: chartData.months,
+      datasets: [
+        { label: 'Net Received (kWh)', data: chartData.received, backgroundColor: 'rgba(46,134,193,0.75)', borderRadius: 4 },
+        { label: 'Utilised (kWh)', data: chartData.utilised, backgroundColor: 'rgba(30,132,73,0.75)', borderRadius: 4 },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { font: {size:11}, usePointStyle: true } } },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: {size:11} } },
+        y: { grid: { color: '#F1F5F9' }, ticks: { font: {size:11}, callback: v => (v/1000).toFixed(0)+'K' } }
+      }
+    }
+  });
+}
+
+// Loss % Line Chart
+if (chartData.months.length) {
+  const lossColors = chartData.loss_pct.map(v => v > targetPct ? '#C0392B' : '#1E8449');
+  new Chart(document.getElementById('lossLineChart'), {
+    type: 'line',
+    data: {
+      labels: chartData.months,
+      datasets: [
+        {
+          label: 'Monthly Loss %',
+          data: chartData.loss_pct,
+          borderColor: '#C0392B',
+          backgroundColor: 'rgba(192,57,43,0.08)',
+          fill: true, tension: 0.35, pointRadius: 5,
+          pointBackgroundColor: lossColors
+        },
+        {
+          label: 'Cumulative Loss %',
+          data: chartData.cumulative_pct,
+          borderColor: '#1B4F72',
+          borderDash: [5,4],
+          fill: false, tension: 0.35, pointRadius: 4
+        },
+        {
+          label: `Target (${targetPct}%)`,
+          data: chartData.months.map(() => targetPct),
+          borderColor: '#F39C12',
+          borderDash: [8,4],
+          fill: false, pointRadius: 0
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { font: {size:11}, usePointStyle: true } } },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: {size:11} } },
+        y: { grid: { color: '#F1F5F9' }, ticks: { font: {size:11}, callback: v => v.toFixed(2)+'%' } }
+      }
+    }
+  });
+}
+
+function recalculate() {
+  const btn = event.target;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Recalculating...';
+  btn.disabled = true;
+  fetch(`/api/recalculate/{{ report.pk }}/`)
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) {
+        location.reload();
+      } else {
+        alert('Error recalculating.');
+        btn.innerHTML = '<i class="fas fa-sync-alt"></i> Recalculate';
+        btn.disabled = false;
+      }
+    });
+}
+
+function triggerCascadeRecalc() {
+  const btn = event.target.closest('button');
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Recalculating cascade...';
+  btn.disabled = true;
+  fetch(`/api/recalculate/{{ report.pk }}/`)
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) {
+        location.reload();
+      } else {
+        alert('Error during cascade recalculation.');
+        btn.innerHTML = orig;
+        btn.disabled = false;
+      }
+    });
+}
+</script>
+{% endblock %}

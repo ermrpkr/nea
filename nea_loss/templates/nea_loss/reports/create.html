@@ -1,0 +1,60 @@
+{% extends 'nea_loss/base.html' %}
+{% block title %}Create Report — NEA{% endblock %}
+{% block page_title %}Create Loss Report{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; New Report{% endblock %}
+
+{% block content %}
+<div style="max-width:600px; margin:0 auto;">
+  <div class="card">
+    <div class="card-header">
+      <h2><i class="fas fa-file-plus" style="color:var(--nea-blue-mid); margin-right:8px;"></i>New Loss Analysis Report</h2>
+    </div>
+    <div class="card-body">
+      <div class="alert alert-info">
+        <i class="fas fa-info-circle"></i>
+        For <strong>distribution centers</strong> and <strong>provincial offices</strong> only (head office views reports from the Reports and Analytics menus).
+        Select the DC, fiscal year, and month to create a monthly report.
+      </div>
+      <form method="POST">
+        {% csrf_token %}
+        <div class="form-group">
+          <label class="form-label">Distribution Center <span style="color:var(--nea-red);">*</span></label>
+          <select name="distribution_center" class="form-control" required>
+            <option value="">— Select Distribution Center —</option>
+            {% for dc in distribution_centers %}
+            <option value="{{ dc.pk }}">{{ dc.name }} ({{ dc.code }}) — {{ dc.provincial_office.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Fiscal Year <span style="color:var(--nea-red);">*</span></label>
+          <select name="fiscal_year" class="form-control" required>
+            <option value="">— Select Fiscal Year —</option>
+            {% for fy in fiscal_years %}
+            <option value="{{ fy.pk }}" {% if fy.is_active %}selected{% endif %}>
+              {{ fy.year_bs }} — Target: {{ fy.loss_target_percent }}%
+              {% if fy.is_active %}(Active){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Month <span style="color:var(--nea-red);">*</span></label>
+          <select name="month" class="form-control" required>
+            <option value="">— Select Month —</option>
+            {% for m_num, m_name in months_list %}
+            <option value="{{ m_num }}">{{ m_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div style="display:flex; gap:12px; margin-top:24px;">
+          <button type="submit" class="btn btn-primary">
+            <i class="fas fa-check"></i> Create Report
+          </button>
+          <a href="{% url 'report_list' %}" class="btn btn-outline">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

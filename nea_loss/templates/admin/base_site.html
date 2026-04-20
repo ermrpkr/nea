@@ -1,0 +1,262 @@
+{% extends "admin/base.html" %}
+{% load i18n static %}
+
+{% block title %}{{ title }} | NEA Loss System Admin{% endblock %}
+
+{% block branding %}
+<div id="site-name" style="display:flex;align-items:center;gap:12px;">
+  <div style="width:36px;height:36px;background:linear-gradient(135deg,#1B4F72,#2E86C1);border-radius:8px;display:flex;align-items:center;justify-content:center;">
+    <span style="color:white;font-weight:800;font-size:16px;">⚡</span>
+  </div>
+  <div>
+    <div style="font-size:16px;font-weight:700;color:white;line-height:1.1;">NEA Loss System</div>
+    <div style="font-size:10px;color:rgba(255,255,255,0.6);letter-spacing:0.5px;">SYSTEM ADMINISTRATION</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+  /* ── Colour palette ── */
+  :root {
+    --admin-primary: #1B4F72;
+    --admin-accent:  #2E86C1;
+    --admin-green:   #1E8449;
+    --admin-red:     #C0392B;
+    --admin-yellow:  #B7770D;
+    --admin-bg:      #F4F6F9;
+    --admin-card:    #FFFFFF;
+    --admin-border:  #E2E8F0;
+    --admin-text:    #1A202C;
+    --admin-muted:   #718096;
+  }
+
+  /* ── Global ── */
+  body { background: var(--admin-bg) !important; font-family: 'Segoe UI', -apple-system, sans-serif !important; }
+
+  /* ── Header ── */
+  #header {
+    background: linear-gradient(135deg, #0A1628 0%, #1B4F72 60%, #2E86C1 100%) !important;
+    padding: 12px 24px !important;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.3) !important;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  #user-tools { font-size: 12px !important; }
+  #user-tools a { color: rgba(255,255,255,0.8) !important; }
+  #user-tools a:hover { color: white !important; }
+
+  /* ── Nav / breadcrumb ── */
+  div.breadcrumbs {
+    background: white !important;
+    padding: 10px 24px !important;
+    font-size: 12px !important;
+    border-bottom: 1px solid var(--admin-border) !important;
+    color: var(--admin-muted) !important;
+  }
+  div.breadcrumbs a { color: var(--admin-accent) !important; }
+
+  /* ── Content area ── */
+  #content { padding: 24px !important; }
+  #content-main { margin-right: 0 !important; }
+
+  /* ── Module / card ── */
+  .module, fieldset.module {
+    background: var(--admin-card) !important;
+    border: 1px solid var(--admin-border) !important;
+    border-radius: 12px !important;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.06) !important;
+    margin-bottom: 20px !important;
+    overflow: hidden !important;
+  }
+  .module h2, .module caption, fieldset.module h2 {
+    background: linear-gradient(90deg, var(--admin-primary), var(--admin-accent)) !important;
+    color: white !important;
+    padding: 12px 18px !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.3px !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+  }
+  .module h3 {
+    color: var(--admin-primary) !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    padding: 10px 18px !important;
+    border-bottom: 1px solid var(--admin-border) !important;
+    margin: 0 !important;
+  }
+
+  /* ── Index page app headers ── */
+  #content-main .app-nea_loss > table caption {
+    background: linear-gradient(90deg, #0A1628, #1B4F72) !important;
+    font-size: 14px !important;
+    padding: 14px 18px !important;
+  }
+
+  /* ── Tables ── */
+  #result_list { border-radius: 0 !important; }
+  #result_list thead th {
+    background: var(--admin-primary) !important;
+    color: white !important;
+    font-size: 11px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+    padding: 10px 14px !important;
+    border: none !important;
+  }
+  #result_list thead th a { color: rgba(255,255,255,0.9) !important; }
+  #result_list thead th.sorted { background: var(--admin-accent) !important; }
+  #result_list tbody tr { transition: background 0.1s; }
+  #result_list tbody tr:hover td { background: #EBF5FB !important; }
+  #result_list tbody td { padding: 9px 14px !important; font-size: 13px !important; border-bottom: 1px solid #F1F5F9 !important; }
+  #result_list tfoot { background: #F7FAFC !important; font-size: 12px !important; color: var(--admin-muted) !important; }
+
+  /* ── Changelist actions ── */
+  .actions {
+    background: #F0F4F8 !important;
+    padding: 10px 14px !important;
+    border-radius: 8px !important;
+    border: 1px solid var(--admin-border) !important;
+    font-size: 12px !important;
+  }
+
+  /* ── Forms ── */
+  .form-row { padding: 10px 18px !important; border-bottom: 1px solid #F1F5F9 !important; }
+  .form-row:last-child { border-bottom: none !important; }
+  label { font-size: 12px !important; font-weight: 600 !important; color: var(--admin-muted) !important; }
+  input[type=text], input[type=email], input[type=number], input[type=password],
+  select, textarea {
+    border: 1px solid var(--admin-border) !important;
+    border-radius: 7px !important;
+    padding: 7px 11px !important;
+    font-size: 13px !important;
+    transition: border-color 0.15s !important;
+  }
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--admin-accent) !important;
+    outline: none !important;
+    box-shadow: 0 0 0 3px rgba(46,134,193,0.12) !important;
+  }
+
+  /* ── Buttons ── */
+  .button, input[type=submit], input[type=button], .submit-row input {
+    background: linear-gradient(135deg, var(--admin-primary), var(--admin-accent)) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 7px !important;
+    padding: 8px 18px !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    cursor: pointer !important;
+    transition: opacity 0.15s !important;
+  }
+  .button:hover, input[type=submit]:hover { opacity: 0.88 !important; }
+  .button.default { background: linear-gradient(135deg, #1E8449, #27AE60) !important; }
+  .deletelink { background: var(--admin-red) !important; }
+  .addlink {
+    background: linear-gradient(135deg, #1E8449, #27AE60) !important;
+    color: white !important; border-radius: 7px !important;
+    padding: 7px 14px !important; font-size: 12px !important; font-weight: 600 !important;
+    text-decoration: none !important; display: inline-block !important;
+  }
+
+  /* ── Submit row ── */
+  .submit-row {
+    background: var(--admin-bg) !important;
+    border-top: 1px solid var(--admin-border) !important;
+    padding: 14px 18px !important;
+    border-radius: 0 0 12px 12px !important;
+  }
+
+  /* ── Sidebar / filters ── */
+  #changelist-filter {
+    background: var(--admin-card) !important;
+    border: 1px solid var(--admin-border) !important;
+    border-radius: 12px !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+  #changelist-filter h2 {
+    background: var(--admin-primary) !important;
+    color: white !important;
+    padding: 10px 16px !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    margin: 0 !important;
+  }
+  #changelist-filter h3 {
+    padding: 10px 16px 4px !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    color: var(--admin-muted) !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+  }
+  #changelist-filter ul { padding: 0 16px 10px !important; }
+  #changelist-filter ul li a { font-size: 12px !important; color: var(--admin-accent) !important; }
+  #changelist-filter ul li.selected a { color: var(--admin-primary) !important; font-weight: 600 !important; }
+
+  /* ── Messages ── */
+  .messagelist li {
+    padding: 10px 16px !important;
+    border-radius: 8px !important;
+    margin-bottom: 8px !important;
+    font-size: 13px !important;
+  }
+  .messagelist li.success { background: #D5F5E3 !important; color: #1E8449 !important; border-left: 4px solid #1E8449 !important; }
+  .messagelist li.warning { background: #FEF9E7 !important; color: #B7770D !important; border-left: 4px solid #F39C12 !important; }
+  .messagelist li.error   { background: #FADBD8 !important; color: #C0392B !important; border-left: 4px solid #C0392B !important; }
+
+  /* ── Dashboard app list ── */
+  .app-nea_loss .model-distributioncenter td.field-report_start_month { font-weight: 600; color: var(--admin-accent); }
+  .app-nea_loss .model-distributioncenter td.field-is_active_colored span.active { color: var(--admin-green); font-weight: 700; }
+  .app-nea_loss .model-distributioncenter td.field-is_active_colored span.inactive { color: var(--admin-red); font-weight: 700; }
+
+  /* ── Inline tabular ── */
+  .inline-group .tabular td, .inline-group .tabular th { font-size: 12px !important; padding: 7px 10px !important; }
+  .inline-group h2 { background: #EBF5FB !important; color: var(--admin-primary) !important; font-size: 12px !important; }
+
+  /* ── Search bar ── */
+  #toolbar { background: #EBF5FB !important; padding: 10px 14px !important; border-radius: 8px !important; margin-bottom: 12px !important; }
+  #searchbar { border-radius: 7px !important; padding: 7px 12px !important; font-size: 13px !important; border: 1px solid var(--admin-border) !important; }
+
+  /* ── Object tools ── */
+  ul.object-tools li a {
+    background: linear-gradient(135deg, var(--admin-primary), var(--admin-accent)) !important;
+    border-radius: 7px !important;
+    font-size: 12px !important;
+    padding: 7px 14px !important;
+  }
+  ul.object-tools li a:hover { opacity: 0.85 !important; }
+
+  /* ── Help text ── */
+  .help { color: var(--admin-muted) !important; font-size: 11px !important; margin-top: 3px !important; font-style: normal !important; }
+
+  /* ── Related field ── */
+  .related-widget-wrapper { display: flex !important; align-items: center !important; gap: 8px !important; }
+
+  /* ── Pagination ── */
+  .paginator { font-size: 12px !important; color: var(--admin-muted) !important; }
+  .paginator a { color: var(--admin-accent) !important; border: 1px solid var(--admin-border) !important; border-radius: 5px !important; padding: 3px 8px !important; margin: 0 2px !important; }
+
+  /* ── Readonly field ── */
+  .readonly { color: var(--admin-text) !important; font-size: 13px !important; }
+
+  /* ── Status badge helpers ── */
+  .badge-approved { background: #D5F5E3; color: #1E8449; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 700; }
+  .badge-draft    { background: #F0F4F8; color: #718096; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 700; }
+  .badge-rejected { background: #FADBD8; color: #C0392B; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 700; }
+
+  /* ── Index page icons ── */
+  .app-nea_loss th.column-__str__ { width: 40%; }
+</style>
+{% endblock %}
+
+{% block footer %}
+<div id="footer" style="background:white;border-top:1px solid #E2E8F0;padding:12px 24px;font-size:11px;color:#718096;display:flex;justify-content:space-between;align-items:center;">
+  <span>NEA Loss Analysis System — System Administration Panel</span>
+  <span>Nepal Electricity Authority</span>
+</div>
+{% endblock %}

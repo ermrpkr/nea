@@ -1,0 +1,96 @@
+:root {
+  --nea-admin-blue: #1B4F72;
+  --nea-admin-blue-mid: #2E86C1;
+  --nea-admin-green: #1E8449;
+  --nea-admin-red: #C0392B;
+  --nea-admin-bg: #F0F4F8;
+  --nea-admin-border: #E2E8F0;
+}
+
+/* App-level tweaks for Django admin */
+body {
+  background: var(--nea-admin-bg) !important;
+}
+
+/* Header / Branding */
+#header {
+  background: var(--nea-admin-blue) !important;
+  border-bottom: 1px solid rgba(0,0,0,0.12);
+}
+
+#branding h1 a,
+#branding h1 a:visited {
+  color: #fff !important;
+  text-decoration: none;
+}
+
+#branding h1 a:hover {
+  text-decoration: underline;
+}
+
+/* Make all admin header links white */
+#header a,
+#header a:visited {
+  color: #fff !important;
+}
+
+/* Links */
+a {
+  color: var(--nea-admin-blue-mid);
+}
+
+/* Buttons */
+.button,
+input[type="submit"],
+input[type="button"],
+input[type="reset"],
+.submit-row input.default {
+  background: var(--nea-admin-blue) !important;
+  border-color: var(--nea-admin-blue) !important;
+  color: #fff !important;
+  border-radius: 6px !important;
+}
+
+.button:hover,
+input[type="submit"]:hover,
+input[type="button"]:hover,
+.submit-row input.default:hover {
+  background: var(--nea-admin-blue-mid) !important;
+}
+
+/* Modules / cards */
+.module {
+  border-color: var(--nea-admin-border) !important;
+}
+
+.module h2,
+.module caption {
+  background: #D6EAF8 !important;
+  color: #1B4F72 !important;
+}
+
+/* Tables a bit more modern */
+.changelist-form .results,
+.results {
+  background: #fff;
+}
+
+.results th {
+  background: #F7FAFC;
+  border-bottom: 1px solid var(--nea-admin-border);
+}
+
+/* Make module/action buttons match app buttons */
+input[type="submit"].default,
+.submit-row input.default {
+  background: var(--nea-admin-blue) !important;
+  border-color: var(--nea-admin-blue) !important;
+  color: #fff !important;
+}
+
+input[type="submit"].default:hover,
+.submit-row input.default:hover {
+  background: var(--nea-admin-blue-mid) !important;
+  border-color: var(--nea-admin-blue-mid) !important;
+}
+

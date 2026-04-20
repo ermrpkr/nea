@@ -1,0 +1,110 @@
+{% extends 'nea_loss/base.html' %}
+{% block title %}DC Yearly Targets — NEA{% endblock %}
+{% block page_title %}Set Yearly Loss Targets{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; DC Yearly Targets{% endblock %}
+
+{% block content %}
+<div style="background:linear-gradient(135deg,#1B4F72,#2E86C1);border-radius:14px;padding:20px 28px;margin-bottom:24px;color:white;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+  <div>
+    <div style="font-size:12px;opacity:0.65;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Provincial Target Setting</div>
+    <div style="font-size:20px;font-weight:700;">DC Loss % Targets</div>
+    <div style="font-size:13px;opacity:0.7;margin-top:4px;">
+      {% if active_fy %}Fiscal Year {{ active_fy.year_bs }}{% else %}No active fiscal year{% endif %}
+      &nbsp;|&nbsp; Enter target loss % for each DC for the entire fiscal year. 
+    </div>
+  </div>
+  <div style="font-size:12px;opacity:0.75;text-align:right;">
+    <i class="fas fa-info-circle"></i> These targets are visible to DC users and appear in their Excel exports.
+    <br><strong>Note:</strong> Once set by provincial users, targets can only be edited by administrators.
+  </div>
+</div>
+
+{% if messages %}
+{% for msg in messages %}
+<div class="alert alert-{{ msg.tags }}" style="margin-bottom:16px;">{{ msg }}</div>
+{% endfor %}
+{% endif %}
+
+{% if not active_fy %}
+<div class="card" style="text-align:center;padding:48px;">
+  <div style="font-size:40px;margin-bottom:12px;">📅</div>
+  <div style="font-size:16px;font-weight:600;">No Active Fiscal Year</div>
+  <div style="color:var(--text-muted);font-size:13px;margin-top:8px;">Please set an active fiscal year before configuring targets.</div>
+</div>
+{% elif not dc_rows %}
+<div class="card" style="text-align:center;padding:48px;">
+  <div style="font-size:40px;margin-bottom:12px;">🏢</div>
+  <div style="font-size:16px;font-weight:600;">No Distribution Centers Found</div>
+  <div style="color:var(--text-muted);font-size:13px;margin-top:8px;">No DCs are assigned to your provincial office.</div>
+</div>
+{% else %}
+<form method="POST">
+  {% csrf_token %}
+
+  {% for row in dc_rows %}
+  <div class="card mb-16" style="overflow:hidden;">
+    <div class="card-header" style="background:#F7FAFC;border-bottom:2px solid var(--nea-blue);">
+      <h2 style="color:var(--nea-blue);"><i class="fas fa-building" style="margin-right:8px;"></i>{{ row.dc.name }}</h2>
+      <span style="font-size:12px;color:var(--text-muted);">{{ row.dc.provincial_office.name }}</span>
+      {% if not row.can_edit %}<span style="margin-left:10px;font-size:11px;color:#6c757d;"><i class="fas fa-lock"></i> Read-only (admin only)</span>{% endif %}
+      {% if row.target_exists and not row.can_edit %}<span style="margin-left:10px;font-size:11px;color:#B7770D;"><i class="fas fa-check-circle"></i> Target set</span>{% endif %}
+    </div>
+    <div style="padding:20px;text-align:center;">
+      <div style="display:inline-block;min-width:200px;">
+        <label style="display:block;font-size:13px;font-weight:600;color:var(--text-muted);margin-bottom:8px;">Yearly Target Loss %</label>
+        <div style="position:relative;display:inline-block;">
+          <input
+            type="number"
+            name="target_{{ row.dc.pk }}"
+            value="{{ row.target }}"
+            min="0" max="100" step="0.001"
+            placeholder="—"
+            {% if not row.can_edit %}readonly style="background:#f8f9fa;border-color:#dee2e6;color:#6c757d;"{% endif %}
+            style="width:120px;padding:8px 28px 8px 12px;border:1px solid var(--border-color);border-radius:6px;font-size:14px;text-align:right;font-family:monospace;"
+            onchange="markChanged(this)"
+          >
+          <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--text-muted);pointer-events:none;">%</span>
+        </div>
+        {% if not row.can_edit %}
+        <div style="font-size:11px;color:#6c757d;margin-top:4px;">
+          {% if row.target_exists %}
+            <i class="fas fa-lock"></i> Target already set - only administrators can edit
+          {% else %}
+            <i class="fas fa-lock"></i> Read-only (admin only)
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+
+  {% if dc_rows.0.can_edit %}
+  <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:8px;">
+    <a href="{% url 'dashboard' %}" class="btn btn-outline">Cancel</a>
+    <button type="submit" class="btn btn-primary" id="save-btn">
+      <i class="fas fa-save"></i> Save All Targets
+    </button>
+  </div>
+  {% else %}
+  <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:8px;">
+    <a href="{% url 'dashboard' %}" class="btn btn-outline">Back to Dashboard</a>
+  </div>
+  {% endif %}
+</form>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function markChanged(el) {
+  el.style.borderColor = 'var(--nea-blue-mid)';
+  el.style.background = '#EBF5FB';
+}
+document.querySelector('form') && document.querySelector('form').addEventListener('submit', function() {
+  const btn = document.getElementById('save-btn');
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+  btn.disabled = true;
+});
+</script>
+{% endblock %}

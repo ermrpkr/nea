@@ -1,0 +1,69 @@
+{% extends 'nea_loss/base.html' %}
+{% block title %}My Profile — NEA{% endblock %}
+{% block page_title %}My Profile{% endblock %}
+{% block breadcrumb %}Account &rsaquo; Profile{% endblock %}
+{% block content %}
+<div style="max-width:700px; margin:0 auto;">
+<div class="card mb-24">
+  <div style="background:linear-gradient(135deg,#1B4F72,#2E86C1); padding:28px; border-radius:11px 11px 0 0; display:flex; align-items:center; gap:18px;">
+    <div style="width:64px; height:64px; border-radius:50%; background:rgba(255,255,255,0.2); display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:700; color:white;">{{ user.full_name|slice:":2"|upper }}</div>
+    <div>
+      <div style="font-size:20px; font-weight:700; color:white;">{{ user.full_name }}</div>
+      <div style="color:rgba(255,255,255,0.7); font-size:13px; margin-top:4px;">{{ user.get_role_display }}{% if user.designation %} · {{ user.designation }}{% endif %}</div>
+      {% if user.distribution_center %}<div style="color:rgba(255,255,255,0.6); font-size:12px; margin-top:2px;"><i class="fas fa-building" style="margin-right:4px;"></i>{{ user.distribution_center.name }}</div>{% endif %}
+    </div>
+  </div>
+  <div class="card-body">
+    <form method="POST">
+      {% csrf_token %}
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <input type="text" name="full_name" class="form-control" value="{{ user.full_name }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input type="email" name="email" class="form-control" value="{{ user.email }}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Phone</label>
+          <input type="text" name="phone" class="form-control" value="{{ user.phone }}" placeholder="Contact number">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Designation</label>
+          <input type="text" name="designation" class="form-control" value="{{ user.designation }}" placeholder="Job title">
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div style="font-size:14px; font-weight:600; margin-bottom:14px; color:var(--text-secondary);">Change Password (leave blank to keep current)</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Current Password</label>
+          <input type="password" name="old_password" class="form-control" placeholder="Current password">
+        </div>
+        <div class="form-group">
+          <label class="form-label">New Password</label>
+          <input type="password" name="new_password" class="form-control" placeholder="New password (min 8 chars)" minlength="8">
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Update Profile</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h2>Account Information</h2></div>
+  <div class="card-body">
+    <table style="width:100%; font-size:13.5px;">
+      <tr><td style="color:var(--text-muted); padding:7px 0; width:40%;">Username</td><td><code>{{ user.username }}</code></td></tr>
+      <tr><td style="color:var(--text-muted); padding:7px 0;">Employee ID</td><td>{{ user.employee_id|default:"—" }}</td></tr>
+      <tr><td style="color:var(--text-muted); padding:7px 0;">Role</td><td>{{ user.get_role_display }}</td></tr>
+      <tr><td style="color:var(--text-muted); padding:7px 0;">Member Since</td><td>{{ user.date_joined|date:"d M Y" }}</td></tr>
+      <tr><td style="color:var(--text-muted); padding:7px 0;">Last Login IP</td><td>{{ user.last_login_ip|default:"—" }}</td></tr>
+    </table>
+  </div>
+</div>
+</div>
+{% endblock %}

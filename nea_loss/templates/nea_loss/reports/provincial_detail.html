@@ -1,0 +1,100 @@
+{% extends 'nea_loss/base.html' %}
+{% load nea_filters %}
+{% block title %}Provincial Report — {{ report.provincial_office.name }}{% endblock %}
+{% block page_title %}Provincial Report Details{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; Provincial Reports &rsaquo; Details{% endblock %}
+
+{% block content %}
+<div class="card mb-24">
+  <div class="card-header">
+    <h2>
+      <i class="fas fa-file-alt" style="color:var(--nea-blue); margin-right:8px;"></i>
+      Provincial Report Details
+      {% if report.fiscal_year %}
+        &mdash;
+        {{ report.provincial_office.name }}
+        /
+        {{ report.fiscal_year.year_bs }}
+        {% if report.month %}
+          /
+          {{ report.get_month_display }}
+        {% endif %}
+      {% endif %}
+    </h2>
+  </div>
+  <div class="card-body">
+    <div class="row">
+      <div class="col-md-6">
+        <div class="form-group">
+          <label class="form-label">Provincial Office</label>
+          <div class="form-control-static">{{ report.provincial_office.name }}</div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="form-group">
+          <label class="form-label">Fiscal Year</label>
+          <div class="form-control-static">{{ report.fiscal_year.year_bs }}</div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="form-group">
+          <label class="form-label">Month</label>
+          <div class="form-control-static">{{ report.get_month_display }}</div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <div class="form-control-static">
+            <span class="badge badge-{{ report.status|lower }}">{{ report.get_status_display }}</span>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-12">
+        <div class="form-group">
+          <label class="form-label">Created By</label>
+          <div class="form-control-static">{{ report.created_by.get_full_name|default:report.created_by.username }}</div>
+        </div>
+      </div>
+      <div class="col-md-12">
+        <div class="form-group">
+          <label class="form-label">Created At</label>
+          <div class="form-control-static">{{ report.created_at|date:"Y-m-d H:i" }}</div>
+        </div>
+      </div>
+      <div class="col-md-12">
+        <div class="form-group">
+          <label class="form-label">Updated By</label>
+          <div class="form-control-static">{{ report.updated_by.get_full_name|default:report.updated_by.username }}</div>
+        </div>
+      </div>
+      <div class="col-md-12">
+        <div class="form-group">
+          <label class="form-label">Updated At</label>
+          <div class="form-control-static">{{ report.updated_at|date:"Y-m-d H:i" }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="card">
+    <div class="card-header">
+      <h3><i class="fas fa-chart-line" style="color:var(--nea-blue); margin-right:8px;"></i> Report Actions</h3>
+    </div>
+    <div class="card-body">
+      <div class="row">
+        <div class="col-md-6">
+          <a href="{% url 'provincial_report_print' report.pk %}" class="btn btn-primary" target="_blank">
+            <i class="fas fa-print"></i> Print Report
+          </a>
+        </div>
+        <div class="col-md-6">
+          <a href="{% url 'provincial_report_excel' report.pk %}" class="btn btn-success">
+            <i class="fas fa-file-excel"></i> Export Excel
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
