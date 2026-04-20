@@ -7,3 +7,4 @@ sqlparse==0.5.5
 asgiref==3.11.1
 python-decouple==3.8
 et-xmlfile==2.0.0
+dj-database-url==2.3.0
