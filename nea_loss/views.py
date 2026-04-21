@@ -673,6 +673,16 @@ class DashboardView(LoginRequiredMixin, View):
             # Approved months are the columns we just built
             approved_months = dc_monthly_cols
 
+        # Determine which months are required for this DC and which are still pending
+        required_months = dc.get_required_months(active_fy) if dc else list(range(1, 13))
+        submitted_months = set(
+            LossReport.objects.filter(
+                distribution_center=dc,
+                fiscal_year=active_fy,
+            ).values_list('month', flat=True)
+        ) if (dc and active_fy) else set()
+        pending_months = [m for m in required_months if m not in submitted_months]
+
         return {
             'distribution_center':    dc,
             'current_report':         report,
@@ -685,6 +695,9 @@ class DashboardView(LoginRequiredMixin, View):
             'ytd_loss_pct':           ytd_loss_pct,
             'prov_targets':           prov_targets,
             'can_create_loss_report': _can_create_loss_report(user),
+            'report_start_month':     dc.report_start_month if dc else 1,
+            'required_months':        required_months,
+            'pending_months':         pending_months,
         }
 
 
@@ -833,71 +846,40 @@ class ReportCreateView(LoginRequiredMixin, View):
             (5,'Mangsir'),(6,'Poush'),(7,'Magh'),(8,'Falgun'),
             (9,'Chaitra'),(10,'Baisakh'),(11,'Jestha'),(12,'Ashadh'),
         ]
-        
-        # Filter months to only show available options
+
         available_months = []
         active_fy = FiscalYear.objects.filter(is_active=True).first()
-        
+        dc_start_month = dcs.first().report_start_month if dcs.exists() else 1
+
         for month_num, month_name in all_months:
-            # Check if this month can be created
-            can_create = True
-            
-            # First check: Only show months from start month onwards
-            if active_fy and dcs.exists():
-                dc_start_month = dcs.first().report_start_month
-                if month_num < dc_start_month:
-                    # Skip months before the start month entirely
-                    can_create = False
-                    continue
-            
-            # Check if report already exists for this month
-            if active_fy and can_create:
-                existing_report = LossReport.objects.filter(
+            # Only show months from the DC's start month onwards
+            if month_num < dc_start_month:
+                continue
+
+            # Skip months that already have a report
+            if active_fy:
+                if LossReport.objects.filter(
                     distribution_center__in=dcs,
                     fiscal_year=active_fy,
-                    month=month_num
-                ).first()
-                
-                if existing_report:
-                    can_create = False
-            
-            # For months other than Shrawan, check if previous month is approved
-            # But skip this check for months before the DC's start month
-            if month_num > 1 and can_create:
-                # For each DC, check if this month is before its start month
-                # If it's before any DC's start month, skip the previous month check
-                skip_previous_check = False
-                for dc in dcs:
-                    if month_num < dc.report_start_month:
-                        skip_previous_check = True
-                        break
-                
-                if not skip_previous_check:
-                    previous_month = month_num - 1
-                    previous_report = LossReport.objects.filter(
-                        distribution_center__in=dcs,
-                        fiscal_year=active_fy,
-                        month=previous_month,
-                        status='APPROVED'
-                    ).first()
-                    
-                    if not previous_report:
-                        can_create = False
-            
-            if can_create:
-                available_months.append((month_num, month_name))
-        
+                    month=month_num,
+                ).exists():
+                    continue
+
+            # For months after the start month, require the previous month to be approved.
+            # When month_num == dc_start_month there is no required predecessor.
+            if month_num > dc_start_month and active_fy:
+                previous_approved = LossReport.objects.filter(
+                    distribution_center__in=dcs,
+                    fiscal_year=active_fy,
+                    month=month_num - 1,
+                    status='APPROVED',
+                ).exists()
+                if not previous_approved:
+                    continue
+
+            available_months.append((month_num, month_name))
+
         months_list = available_months
-        
-        # Debug output
-        print(f"DEBUG: Available months for {dcs.count()} DC(s): {months_list}")
-        print(f"DEBUG: Total DCs in query: {dcs.count()}")
-        print(f"DEBUG: User: {request.user.username} - is_dc_level: {request.user.is_dc_level} - is_provincial: {request.user.is_provincial}")
-        for dc in dcs:
-            print(f"DEBUG: DC {dc.name} (ID: {dc.id}) - Start Month: {dc.report_start_month}")
-        print(f"DEBUG: Active Fiscal Year: {active_fy.year_bs if active_fy else 'None'}")
-        print(f"DEBUG: Available months list: {months_list}")
-        print(f"DEBUG: All months list: {all_months}")
         
         return render(request, self.template_name, {
             'fiscal_years': FiscalYear.objects.all(),
@@ -936,30 +918,40 @@ class ReportCreateView(LoginRequiredMixin, View):
             messages.error(request, 'Selected month is invalid.')
             return self.get(request)
 
-        # Check if previous month is approved (except for Shrawan and months before start month)
-        if month > 1:  # Not Shrawan
-            # If this month is >= the DC's start month, check previous month approval
-            if month >= dc.report_start_month:
-                previous_month = month - 1
-                try:
-                    previous_report = LossReport.objects.get(
-                        distribution_center=dc,
-                        fiscal_year=fy,
-                        month=previous_month
-                    )
-                    if previous_report.status != 'APPROVED':
-                        messages.error(
-                            request,
-                            f'Previous month report ({month_names.get(previous_month, "")}) must be approved before creating {month_names.get(month, "")} report.'
-                        )
-                        return self.get(request)
-                except LossReport.DoesNotExist:
+        # Enforce start-month restriction: DC cannot create reports for months
+        # before its configured report_start_month.
+        if month < dc.report_start_month:
+            start_month_name = month_names.get(dc.report_start_month, str(dc.report_start_month))
+            messages.error(
+                request,
+                f'Reports cannot be created for months before the DC\'s start month '
+                f'({start_month_name}). Please contact admin if the start month was changed.'
+            )
+            return self.get(request)
+
+        # Check if previous month is approved.
+        # Skip this check when the selected month IS the DC's start month — there
+        # is no required prior month in that case, even if month > 1.
+        if month > dc.report_start_month:
+            previous_month = month - 1
+            try:
+                previous_report = LossReport.objects.get(
+                    distribution_center=dc,
+                    fiscal_year=fy,
+                    month=previous_month
+                )
+                if previous_report.status != 'APPROVED':
                     messages.error(
                         request,
-                        f'Previous month report ({month_names.get(previous_month, "")}) doesn\'t exist. Please create that first.'
+                        f'Previous month report ({month_names.get(previous_month, "")}) must be approved before creating {month_names.get(month, "")} report.'
                     )
                     return self.get(request)
-            # If month < start month, skip previous month check completely
+            except LossReport.DoesNotExist:
+                messages.error(
+                    request,
+                    f'Previous month report ({month_names.get(previous_month, "")}) doesn\'t exist. Please create that first.'
+                )
+                return self.get(request)
 
         allowed = DistributionCenter.objects.all()
         if user.is_dc_level and user.distribution_center:

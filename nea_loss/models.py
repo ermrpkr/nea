@@ -6,6 +6,7 @@ from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.utils import timezone
 from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.exceptions import ValidationError
 import decimal
 
 
@@ -61,6 +62,16 @@ class DistributionCenter(models.Model):
 
     def __str__(self):
         return self.name
+
+    def get_required_months(self, fiscal_year=None):
+        """Return the list of month numbers this DC is required to report for.
+
+        Months run from ``report_start_month`` through 12 (Ashadh), the last
+        month of the Nepali fiscal year.  The optional *fiscal_year* argument
+        is accepted for API consistency but is not used in the current logic
+        (start month is a DC-level setting, not per-FY).
+        """
+        return list(range(self.report_start_month, 13))
 
     class Meta:
         ordering = ['name']
@@ -207,6 +218,17 @@ class LossReport(models.Model):
             9: 'Chaitra', 10: 'Baisakh', 11: 'Jestha', 12: 'Ashadh'
         }
         return month_names.get(self.month, '')
+
+    def clean(self):
+        """Validate that the report month is not before the DC's report_start_month."""
+        if self.distribution_center_id and self.month:
+            start_month = self.distribution_center.report_start_month
+            if self.month < start_month:
+                start_month_name = dict(DistributionCenter.MONTH_CHOICES).get(start_month, str(start_month))
+                raise ValidationError(
+                    f"Reports cannot be created for months before the DC's start month "
+                    f"({start_month_name}). Please contact admin if the start month was changed."
+                )
 
     def calculate_summary(self):
         months = self.monthly_data.all()
