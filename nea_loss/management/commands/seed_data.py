@@ -293,6 +293,9 @@ class Command(BaseCommand):
             if NEAUser.objects.filter(username=u['username']).exists():
                 self.stdout.write(f"  [WARNING] User '{u['username']}' already exists - skipped")
                 continue
+            if NEAUser.objects.filter(email=u['email']).exists():
+                self.stdout.write(f"  [WARNING] User with email '{u['email']}' already exists - skipped")
+                continue
             kwargs = {
                 'email': u['email'],
                 'full_name': u['full_name'],
