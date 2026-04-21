@@ -1,6 +1,6 @@
 from django.contrib import admin, messages
 from django.shortcuts import redirect
-from ..models import DistributionCenter
+from nea_loss.models import DistributionCenter
 
 def change_dc_start_month(self, request, queryset):
     """Admin view to change DC start month"""
