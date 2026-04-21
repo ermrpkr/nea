@@ -58,6 +58,7 @@ class NEAUserAdmin(UserAdmin):
     search_fields = ['username', 'full_name', 'email', 'employee_id']
     ordering      = ['role', 'full_name']
     list_per_page = 30
+    actions = ['admin_edit_action']  # Add edit action
 
     fieldsets = (
         ('Login Credentials', {'fields': ('username', 'password')}),
@@ -89,6 +90,14 @@ class NEAUserAdmin(UserAdmin):
     @admin.display(description='Active', boolean=False)
     def active_badge(self, obj):
         return badge('Active', 'green') if obj.is_active else badge('Inactive', 'red')
+    
+    @admin.action(description='Edit selected items')
+    def admin_edit_action(self, request, queryset):
+        # Redirect to change form for first selected item
+        if queryset.exists():
+            first_item = queryset.first()
+            return redirect(f'admin:nea_loss_neauser_change', first_item.id)
+        self.message_user(request, 'Please select at least one item to edit.')
 
 
 # ══════════════════════════════════════════════════════════════════════════════
