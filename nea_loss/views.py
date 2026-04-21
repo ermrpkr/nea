@@ -872,8 +872,9 @@ class ReportCreateView(LoginRequiredMixin, View):
         
         # Debug output
         print(f"DEBUG: Available months for {dcs.count()} DC(s): {months_list}")
+        print(f"DEBUG: Total DCs in query: {dcs.count()}")
         for dc in dcs:
-            print(f"DEBUG: DC {dc.name} - Start Month: {dc.report_start_month}")
+            print(f"DEBUG: DC {dc.name} (ID: {dc.id}) - Start Month: {dc.report_start_month}")
         
         return render(request, self.template_name, {
             'fiscal_years': FiscalYear.objects.all(),
@@ -2456,7 +2457,7 @@ def _can_create_loss_report(user):
     if getattr(user, 'is_system_admin', False):
         return True
     if user.is_dc_level:
-        return bool(getattr(user, 'distribution_center_id', None))
+        return bool(getattr(user, 'distribution_center', None))
     # Provincial, MD, DMD, Director cannot create DC-level loss reports
     return False
 
