@@ -790,9 +790,16 @@ class ReportCreateView(LoginRequiredMixin, View):
 
     def get(self, request):
         user = request.user
+        print(f"DEBUG: User {user.username} - is_dc_level: {user.is_dc_level} - is_provincial: {user.is_provincial}")
+        if user.is_dc_level:
+            print(f"DEBUG: User's DC: {user.distribution_center}")
+        if user.is_provincial:
+            print(f"DEBUG: User's Province: {user.provincial_office}")
+        
         dcs = DistributionCenter.objects.all()
         if user.is_dc_level and user.distribution_center:
             dcs = dcs.filter(pk=user.distribution_center.pk)
+            print(f"DEBUG: Filtered to DC: {dcs.first().name if dcs.exists() else 'None'}")
         elif user.is_provincial and user.provincial_office:
             # Provincial users should not create reports - disable DC selection
             dcs = DistributionCenter.objects.none()
@@ -818,19 +825,6 @@ class ReportCreateView(LoginRequiredMixin, View):
             # Check if this month can be created
             can_create = True
             
-            # For months other than Shrawan, check if previous month is approved
-            if month_num > 1:
-                previous_month = month_num - 1
-                previous_report = LossReport.objects.filter(
-                    distribution_center__in=dcs,
-                    fiscal_year=active_fy,
-                    month=previous_month,
-                    status='APPROVED'
-                ).first()
-                
-                if not previous_report:
-                    can_create = False
-            
             # Check if report already exists for this month
             if active_fy:
                 existing_report = LossReport.objects.filter(
@@ -841,11 +835,44 @@ class ReportCreateView(LoginRequiredMixin, View):
                 
                 if existing_report:
                     can_create = False
+                else:
+                    # For new reports, check if month is before the DC's report start month
+                    for dc in dcs:
+                        if month_num < dc.report_start_month:
+                            can_create = False
+                            break
+            
+            # For months other than Shrawan, check if previous month is approved
+            # But skip this check for the DC's start month
+            if month_num > 1 and can_create:
+                # Check if this is the start month for any DC
+                is_start_month = False
+                for dc in dcs:
+                    if month_num == dc.report_start_month:
+                        is_start_month = True
+                        break
+                
+                if not is_start_month:
+                    previous_month = month_num - 1
+                    previous_report = LossReport.objects.filter(
+                        distribution_center__in=dcs,
+                        fiscal_year=active_fy,
+                        month=previous_month,
+                        status='APPROVED'
+                    ).first()
+                    
+                    if not previous_report:
+                        can_create = False
             
             if can_create:
                 available_months.append((month_num, month_name))
         
         months_list = available_months
+        
+        # Debug output
+        print(f"DEBUG: Available months for {dcs.count()} DC(s): {months_list}")
+        for dc in dcs:
+            print(f"DEBUG: DC {dc.name} - Start Month: {dc.report_start_month}")
         
         return render(request, self.template_name, {
             'fiscal_years': FiscalYear.objects.all(),
