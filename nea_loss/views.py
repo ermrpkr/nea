@@ -843,13 +843,17 @@ class ReportCreateView(LoginRequiredMixin, View):
                             break
             
             # For months other than Shrawan, check if previous month is approved
-            # But skip this check for months <= the earliest DC start month
+            # But skip this check for months before the DC's start month
             if month_num > 1 and can_create:
-                # Find the earliest start month among all DCs
-                earliest_start_month = min(dc.report_start_month for dc in dcs)
+                # For each DC, check if this month is before its start month
+                # If it's before any DC's start month, skip the previous month check
+                skip_previous_check = False
+                for dc in dcs:
+                    if month_num < dc.report_start_month:
+                        skip_previous_check = True
+                        break
                 
-                # If this month is >= earliest start month, check previous month approval
-                if month_num >= earliest_start_month:
+                if not skip_previous_check:
                     previous_month = month_num - 1
                     previous_report = LossReport.objects.filter(
                         distribution_center__in=dcs,
