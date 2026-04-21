@@ -843,16 +843,13 @@ class ReportCreateView(LoginRequiredMixin, View):
                             break
             
             # For months other than Shrawan, check if previous month is approved
-            # But skip this check for the DC's start month
+            # But skip this check for months <= the earliest DC start month
             if month_num > 1 and can_create:
-                # Check if this is the start month for any DC
-                is_start_month = False
-                for dc in dcs:
-                    if month_num == dc.report_start_month:
-                        is_start_month = True
-                        break
+                # Find the earliest start month among all DCs
+                earliest_start_month = min(dc.report_start_month for dc in dcs)
                 
-                if not is_start_month:
+                # If this month is >= earliest start month, check previous month approval
+                if month_num >= earliest_start_month:
                     previous_month = month_num - 1
                     previous_report = LossReport.objects.filter(
                         distribution_center__in=dcs,
@@ -911,13 +908,10 @@ class ReportCreateView(LoginRequiredMixin, View):
             messages.error(request, 'Selected month is invalid.')
             return self.get(request)
 
-        # Check if previous month is approved (except for Shrawan and DC start month)
+        # Check if previous month is approved (except for Shrawan and months before start month)
         if month > 1:  # Not Shrawan
-            # Check if this is the DC's start month
-            if month == dc.report_start_month:
-                # This is the start month, skip previous month approval check
-                pass
-            else:
+            # If this month is >= the DC's start month, check previous month approval
+            if month >= dc.report_start_month:
                 previous_month = month - 1
                 try:
                     previous_report = LossReport.objects.get(
@@ -937,6 +931,7 @@ class ReportCreateView(LoginRequiredMixin, View):
                         f'Previous month report ({month_names.get(previous_month, "")}) doesn\'t exist. Please create that first.'
                     )
                     return self.get(request)
+            # If month < start month, skip previous month check completely
 
         allowed = DistributionCenter.objects.all()
         if user.is_dc_level and user.distribution_center:
