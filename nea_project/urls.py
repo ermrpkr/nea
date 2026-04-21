@@ -7,5 +7,8 @@ urlpatterns = [
     # Admin
     path('admin/', admin.site.urls),
     
+    # Main application
+    path('', include('nea_loss.urls')),
+    
     # Admin actions handled by admin.site.urls
 ] + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
