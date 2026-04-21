@@ -52,6 +52,58 @@ def badge(text, colour):
 # ══════════════════════════════════════════════════════════════════════════════
 @admin.register(NEAUser)
 class NEAUserAdmin(UserAdmin):
+    actions = ['admin_edit_action', 'change_dc_start_month']  # Add edit action and DC start month change
+    
+    @admin.action(description='Change DC start month for selected DCs')
+    def change_dc_start_month(self, request, queryset):
+        if queryset.exists():
+            dc = queryset.first()
+            if dc:
+                self.message_user(
+                    request,
+                    f'Changed {dc.name} start month to {dc.get_report_start_month_display()} ({dc.report_start_month})'
+                )
+                return redirect(f'admin:nea_loss_distributioncenter_change', dc.id)
+        else:
+            self.message_user(request, 'Please select at least one distribution center to change start month.')
+            return redirect('admin:nea_loss_distributioncenter_changelist')
+    
+    def change_dc_start_month(self, request, queryset):
+        if queryset.exists():
+            dc = queryset.first()
+            if dc:
+                # Get the new start month from form
+                new_start_month = request.POST.get('report_start_month')
+                if new_start_month:
+                    try:
+                        dc.report_start_month = int(new_start_month)
+                        dc.save()
+                        self.message_user(
+                            request,
+                            f'Changed {dc.name} start month to {dc.get_report_start_month_display()} ({dc.report_start_month})'
+                        )
+                    except ValueError:
+                        self.message_user(request, 'Invalid start month value.')
+                else:
+                    self.message_user(request, 'Please select a start month.')
+            return redirect('admin:nea_loss_distributioncenter_changelist')
+        else:
+            self.message_user(request, 'Distribution center not found.')
+            return redirect('admin:nea_loss_distributioncenter_changelist')
+    
+    @admin.action(description='Change DC start month for selected DCs')
+    def change_dc_start_month(self, request, queryset):
+        if queryset.exists():
+            dc = queryset.first()
+            if dc:
+                self.message_user(
+                    request,
+                    f'Changed {dc.name} start month to {dc.get_report_start_month_display()} ({dc.report_start_month})'
+                )
+                return redirect(f'admin:nea_loss_distributioncenter_change', dc.id)
+        else:
+            self.message_user(request, 'Please select at least one distribution center to change start month.')
+            return redirect('admin:nea_loss_distributioncenter_changelist')
     list_display  = ['username', 'full_name', 'role_badge', 'provincial_office',
                      'distribution_center', 'active_badge', 'date_joined']
     list_filter   = ['role', 'is_active', 'provincial_office']

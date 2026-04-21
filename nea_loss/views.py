@@ -779,13 +779,30 @@ class ReportCreateView(LoginRequiredMixin, View):
     template_name = 'nea_loss/reports/create.html'
 
     def dispatch(self, request, *args, **kwargs):
-        if request.user.is_authenticated and not _can_create_loss_report(request.user):
-            messages.error(
-                request,
-                'Only distribution center and provincial office users can create loss reports. '
-                'Head office roles can view reports, analytics, and approvals from the menu.',
-            )
-            return redirect('report_list')
+        if request.user.is_authenticated:
+            # Check if user is DC level and needs admin override
+            if request.user.is_dc_level and not _can_create_loss_report(request.user):
+                # Check if admin override should be used
+                if _can_admin_override_create_report(request.user):
+                    # Use admin override function
+                    return super().dispatch(request, *args, **kwargs)
+                else:
+                    # Use normal DC restrictions
+                    messages.error(
+                        request,
+                        'Only distribution center and provincial office users can create loss reports. '
+                        'Head office roles can view reports, analytics, and approvals from the menu.',
+                    )
+                    return redirect('report_list')
+            else:
+                # Non-DC users use normal restrictions
+                if not _can_create_loss_report(request.user):
+                    messages.error(
+                        request,
+                        'Only distribution center and provincial office users can create loss reports. '
+                        'Head office roles can view reports, analytics, and approvals from the menu.',
+                    )
+                    return redirect('report_list')
         return super().dispatch(request, *args, **kwargs)
 
     def get(self, request):
@@ -836,11 +853,18 @@ class ReportCreateView(LoginRequiredMixin, View):
                 if existing_report:
                     can_create = False
                 else:
-                    # For new reports, check if month is before the DC's report start month
-                    for dc in dcs:
-                        if month_num < dc.report_start_month:
+                    # Only check if month is before this DC's start month for existing reports
+                    # If month is before start month, it should only be blocked if there are existing reports for earlier months
+                    if month_num < dcs.first().report_start_month:
+                        # Check if there are existing reports for any earlier month
+                        existing_earlier_reports = LossReport.objects.filter(
+                            distribution_center__in=dcs,
+                            fiscal_year=active_fy,
+                            month__lt=month_num
+                        ).exists()
+                        
+                        if existing_earlier_reports:
                             can_create = False
-                            break
             
             # For months other than Shrawan, check if previous month is approved
             # But skip this check for months before the DC's start month
@@ -873,8 +897,12 @@ class ReportCreateView(LoginRequiredMixin, View):
         # Debug output
         print(f"DEBUG: Available months for {dcs.count()} DC(s): {months_list}")
         print(f"DEBUG: Total DCs in query: {dcs.count()}")
+        print(f"DEBUG: User: {request.user.username} - is_dc_level: {request.user.is_dc_level} - is_provincial: {request.user.is_provincial}")
         for dc in dcs:
             print(f"DEBUG: DC {dc.name} (ID: {dc.id}) - Start Month: {dc.report_start_month}")
+        print(f"DEBUG: Active Fiscal Year: {active_fy.year_bs if active_fy else 'None'}")
+        print(f"DEBUG: Available months list: {months_list}")
+        print(f"DEBUG: All months list: {all_months}")
         
         return render(request, self.template_name, {
             'fiscal_years': FiscalYear.objects.all(),
@@ -2459,6 +2487,14 @@ def _can_create_loss_report(user):
     if user.is_dc_level:
         return bool(getattr(user, 'distribution_center', None))
     # Provincial, MD, DMD, Director cannot create DC-level loss reports
+    return False
+
+def _can_admin_override_create_report(user):
+    """Admin users can create reports for any DC regardless of existing reports."""
+    if not user.is_authenticated:
+        return False
+    if getattr(user, 'is_system_admin', False):
+        return True
     return False
 
 
