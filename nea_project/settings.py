@@ -110,6 +110,6 @@ NEPALI_MONTHS = [
 # Optional: Add this for better security on Railway
 CSRF_TRUSTED_ORIGINS = config(
     'CSRF_TRUSTED_ORIGINS',
-    default='https://*.up.railway.app',
+    default='https://nea-production.up.railway.app,http://localhost:8000',
     cast=Csv()
 )
