@@ -911,27 +911,32 @@ class ReportCreateView(LoginRequiredMixin, View):
             messages.error(request, 'Selected month is invalid.')
             return self.get(request)
 
-        # Check if previous month is approved (except for Shrawan)
+        # Check if previous month is approved (except for Shrawan and DC start month)
         if month > 1:  # Not Shrawan
-            previous_month = month - 1
-            try:
-                previous_report = LossReport.objects.get(
-                    distribution_center=dc,
-                    fiscal_year=fy,
-                    month=previous_month
-                )
-                if previous_report.status != 'APPROVED':
+            # Check if this is the DC's start month
+            if month == dc.report_start_month:
+                # This is the start month, skip previous month approval check
+                pass
+            else:
+                previous_month = month - 1
+                try:
+                    previous_report = LossReport.objects.get(
+                        distribution_center=dc,
+                        fiscal_year=fy,
+                        month=previous_month
+                    )
+                    if previous_report.status != 'APPROVED':
+                        messages.error(
+                            request,
+                            f'Previous month report ({month_names.get(previous_month, "")}) must be approved before creating {month_names.get(month, "")} report.'
+                        )
+                        return self.get(request)
+                except LossReport.DoesNotExist:
                     messages.error(
                         request,
-                        f'Previous month report ({month_names.get(previous_month, "")}) must be approved before creating {month_names.get(month, "")} report.'
+                        f'Previous month report ({month_names.get(previous_month, "")}) doesn\'t exist. Please create that first.'
                     )
                     return self.get(request)
-            except LossReport.DoesNotExist:
-                messages.error(
-                    request,
-                    f'Previous month report ({month_names.get(previous_month, "")}) doesn\'t exist. Please create that first.'
-                )
-                return self.get(request)
 
         allowed = DistributionCenter.objects.all()
         if user.is_dc_level and user.distribution_center:
