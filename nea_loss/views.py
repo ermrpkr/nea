@@ -842,8 +842,16 @@ class ReportCreateView(LoginRequiredMixin, View):
             # Check if this month can be created
             can_create = True
             
+            # First check: Only show months from start month onwards
+            if active_fy and dcs.exists():
+                dc_start_month = dcs.first().report_start_month
+                if month_num < dc_start_month:
+                    # Skip months before the start month entirely
+                    can_create = False
+                    continue
+            
             # Check if report already exists for this month
-            if active_fy:
+            if active_fy and can_create:
                 existing_report = LossReport.objects.filter(
                     distribution_center__in=dcs,
                     fiscal_year=active_fy,
@@ -852,19 +860,6 @@ class ReportCreateView(LoginRequiredMixin, View):
                 
                 if existing_report:
                     can_create = False
-                else:
-                    # Only check if month is before this DC's start month for existing reports
-                    # If month is before start month, it should only be blocked if there are existing reports for earlier months
-                    if month_num < dcs.first().report_start_month:
-                        # Check if there are existing reports for any earlier month
-                        existing_earlier_reports = LossReport.objects.filter(
-                            distribution_center__in=dcs,
-                            fiscal_year=active_fy,
-                            month__lt=month_num
-                        ).exists()
-                        
-                        if existing_earlier_reports:
-                            can_create = False
             
             # For months other than Shrawan, check if previous month is approved
             # But skip this check for months before the DC's start month
