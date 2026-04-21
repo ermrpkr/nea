@@ -10,6 +10,7 @@ from django.utils.safestring import mark_safe
 from django.db.models import Sum, Count, Avg
 from django.urls import reverse
 from django.utils import timezone
+from django.shortcuts import redirect
 from .models import (
     NEAUser, Province, ProvincialOffice, DistributionCenter,
     FiscalYear, LossReport, MonthlyLossData, MeterPoint, MeterReading,
@@ -97,6 +98,15 @@ class NEAUserAdmin(UserAdmin):
 class ProvinceAdmin(admin.ModelAdmin):
     list_display  = ['name', 'code', 'office_count', 'created_at']
     search_fields = ['name', 'code']
+    actions = ['admin_edit_action']  # Add edit action
+    
+    @admin.action(description='Edit selected items')
+    def admin_edit_action(self, request, queryset):
+        # Redirect to change list for first selected item
+        if queryset.exists():
+            first_item = queryset.first()
+            return redirect(f'admin:nea_loss_province_change', first_item.id)
+        self.message_user(request, 'Please select at least one item to edit.')
 
     @admin.display(description='Provincial Offices')
     def office_count(self, obj):
@@ -108,6 +118,21 @@ class ProvincialOfficeAdmin(admin.ModelAdmin):
     list_display  = ['name', 'code', 'province', 'dc_count', 'contact', 'created_at']
     list_filter   = ['province']
     search_fields = ['name', 'code']
+    list_editable = ['contact']  # Allow inline editing of phone number
+    actions = ['admin_edit_action']  # Add edit action
+    
+    fieldsets = (
+        ('Basic Information', {'fields': ('name', 'code', 'province')}),
+        ('Contact Details', {'fields': ('address', 'contact')}),
+    )
+    
+    @admin.action(description='Edit selected items')
+    def admin_edit_action(self, request, queryset):
+        # Redirect to change form for first selected item
+        if queryset.exists():
+            first_item = queryset.first()
+            return redirect(f'admin:nea_loss_provincialoffice_change', first_item.id)
+        self.message_user(request, 'Please select at least one item to edit.')
 
     @admin.display(description='DCs')
     def dc_count(self, obj):
@@ -123,6 +148,7 @@ class DistributionCenterAdmin(admin.ModelAdmin):
     list_editable = []
     search_fields = ['name', 'code']
     list_per_page = 30
+    actions = ['admin_edit_action']  # Add edit action
 
     fieldsets = (
         ('Basic Information', {'fields': ('name', 'code', 'provincial_office', 'address', 'contact')}),
@@ -161,6 +187,14 @@ class DistributionCenterAdmin(admin.ModelAdmin):
         active = obj.meter_points.filter(is_active=True).count()
         total  = obj.meter_points.count()
         return format_html('{} / {}', active, total)
+    
+    @admin.action(description='Edit selected items')
+    def admin_edit_action(self, request, queryset):
+        # Redirect to change form for first selected item
+        if queryset.exists():
+            first_item = queryset.first()
+            return redirect(f'admin:nea_loss_distributioncenter_change', first_item.id)
+        self.message_user(request, 'Please select at least one item to edit.')
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -349,6 +383,7 @@ class MeterPointAdmin(admin.ModelAdmin):
     list_editable = ['multiplying_factor']
     search_fields = ['name', 'code', 'distribution_center__name']
     list_per_page = 40
+    actions = ['admin_edit_action']  # Add edit action
 
     fieldsets = (
         ('Feeder Identity', {'fields': ('distribution_center', 'name', 'code', 'source_type')}),
@@ -368,6 +403,14 @@ class MeterPointAdmin(admin.ModelAdmin):
     @admin.display(description='Active')
     def active_badge(self, obj):
         return badge('Active', 'green') if obj.is_active else badge('Inactive', 'red')
+    
+    @admin.action(description='Edit selected items')
+    def admin_edit_action(self, request, queryset):
+        # Redirect to change form for first selected item
+        if queryset.exists():
+            first_item = queryset.first()
+            return redirect(f'admin:nea_loss_meterpoint_change', first_item.id)
+        self.message_user(request, 'Please select at least one item to edit.')
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -431,10 +474,19 @@ class ConsumerCategoryAdmin(admin.ModelAdmin):
     list_filter   = ['is_active', 'distribution_center']
     list_editable = ['display_order']
     search_fields = ['name', 'code']
+    actions = ['admin_edit_action']  # Add edit action
 
     @admin.display(description='Active')
     def active_badge(self, obj):
         return badge('Active', 'green') if obj.is_active else badge('Inactive', 'red')
+    
+    @admin.action(description='Edit selected items')
+    def admin_edit_action(self, request, queryset):
+        # Redirect to change form for first selected item
+        if queryset.exists():
+            first_item = queryset.first()
+            return redirect(f'admin:nea_loss_consumercategory_change', first_item.id)
+        self.message_user(request, 'Please select at least one item to edit.')
 
 
 # ══════════════════════════════════════════════════════════════════════════════
