@@ -98,6 +98,34 @@ class NEAUserAdmin(UserAdmin):
             first_item = queryset.first()
             return redirect(f'admin:nea_loss_neauser_change', first_item.id)
         self.message_user(request, 'Please select at least one item to edit.')
+    
+    def save_model(self, request, obj, form, change):
+        """
+        Custom save method to prevent duplicate users when editing username
+        """
+        if change:  # This is an edit operation
+            # Check if there's another user with the same email
+            existing_email_user = NEAUser.objects.filter(
+                email=obj.email
+            ).exclude(pk=obj.pk).first()
+            
+            if existing_email_user:
+                # If there's another user with the same email, prevent the save
+                form.add_error('email', f'A user with email "{obj.email}" already exists (Username: {existing_email_user.username}). Please use a different email.')
+                return
+            
+            # Check if there's another user with the same username
+            existing_username_user = NEAUser.objects.filter(
+                username=obj.username
+            ).exclude(pk=obj.pk).first()
+            
+            if existing_username_user:
+                # If there's another user with the same username, prevent the save
+                form.add_error('username', f'A user with username "{obj.username}" already exists (Email: {existing_username_user.email}). Please use a different username.')
+                return
+        
+        # Call the parent save method
+        super().save_model(request, obj, form, change)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
