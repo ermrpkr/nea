@@ -26,7 +26,7 @@ from .models import (
     NEAUser, LossReport, MonthlyLossData, MeterPoint, MeterReading,
     ConsumerCategory, EnergyUtilisation, ConsumerCount, FiscalYear,
     DistributionCenter, ProvincialOffice, Province, Notification, AuditLog,
-    ProvincialReport, MonthlyMeterPointStatus, DCMonthlyTarget, Message,
+    ProvincialReport, MonthlyMeterPointStatus, DCYearlyTarget, Message,
 )
 
 
@@ -132,13 +132,21 @@ class DashboardView(LoginRequiredMixin, View):
         total_loss = total_received - total_utilised
         overall_loss_pct = (total_loss / total_received * 100) if total_received > 0 else 0
 
-        base.update({
+        # Ensure all required context variables are properly initialized
+        admin_context = {
             'admin_total_users': NEAUser.objects.count(),
             'admin_reports_total': reports.count(),
             'admin_recent_audits': AuditLog.objects.select_related('user').order_by('-timestamp')[:12],
             'admin_quicklink_active_fy': active_fy.year_bs if active_fy else '',
             'admin_overall_loss_pct': round(overall_loss_pct, 2),
-        })
+            'mgmtProvData': base.get('mgmtProvData', []),  # Use empty list for admin
+            'prov_monthly_detail': base.get('prov_monthly_detail', {}),
+            'monthly_trend': base.get('monthly_trend', []),
+            'top_5_loss': base.get('top_5_loss', []),
+            'bottom_5_loss': base.get('bottom_5_loss', []),
+        }
+        
+        base.update(admin_context)
         return base
 
     def _get_top_management_context(self, active_fy):
@@ -159,58 +167,61 @@ class DashboardView(LoginRequiredMixin, View):
 
         # Province-wise breakdown
         prov_data = []
-        for po in ProvincialOffice.objects.prefetch_related('distribution_centers').all():
-            po_reports = reports.filter(distribution_center__provincial_office=po)
-            po_recv = float(po_reports.aggregate(s=Sum('total_received_kwh'))['s'] or 0)
-            po_util = float(po_reports.aggregate(s=Sum('total_utilised_kwh'))['s'] or 0)
-            po_loss = po_recv - po_util
-            po_pct  = round(po_loss / po_recv * 100, 4) if po_recv else 0
-            dc_count = po_reports.values('distribution_center').distinct().count()
-            prov_data.append({
-                'name': po.name,
-                'loss_pct': po_pct,
-                'received': po_recv,
-                'loss_kwh': po_loss,
-                'dc_count': dc_count,
-                'approved_count': po_reports.count(),
-            })
+        if active_fy and reports.exists():
+            for po in ProvincialOffice.objects.prefetch_related('distribution_centers').all():
+                po_reports = reports.filter(distribution_center__provincial_office=po)
+                po_recv = float(po_reports.aggregate(s=Sum('total_received_kwh'))['s'] or 0)
+                po_util = float(po_reports.aggregate(s=Sum('total_utilised_kwh'))['s'] or 0)
+                po_loss = po_recv - po_util
+                po_pct  = round(po_loss / po_recv * 100, 4) if po_recv else 0
+                dc_count = po_reports.values('distribution_center').distinct().count()
+                prov_data.append({
+                    'name': po.name,
+                    'loss_pct': po_pct,
+                    'received': po_recv,
+                    'loss_kwh': po_loss,
+                    'dc_count': dc_count,
+                    'approved_count': po_reports.count(),
+                })
 
         # DC-level details for interactive table (all approved DCs)
         dc_table = []
-        for r in reports.order_by('distribution_center__provincial_office__name',
-                                   'distribution_center__name'):
-            dc_table.append({
-                'dc_name':   r.distribution_center.name,
-                'dc_code':   r.distribution_center.code,
-                'province':  r.distribution_center.provincial_office.name,
-                'month':     r.get_month_display(),
-                'month_num': r.month,
-                'received':  float(r.total_received_kwh),
-                'utilised':  float(r.total_utilised_kwh),
-                'loss_kwh':  float(r.total_loss_kwh),
-                'loss_pct':  round(float(r.cumulative_loss_percent) * 100, 4),
-                'status':    r.status,
-                'report_pk': r.pk,
-            })
+        if active_fy and reports.exists():
+            for r in reports.order_by('distribution_center__provincial_office__name',
+                                       'distribution_center__name'):
+                dc_table.append({
+                    'dc_name':   r.distribution_center.name,
+                    'dc_code':   r.distribution_center.code,
+                    'province':  r.distribution_center.provincial_office.name,
+                    'month':     r.get_month_display(),
+                    'month_num': r.month,
+                    'received':  float(r.total_received_kwh),
+                    'utilised':  float(r.total_utilised_kwh),
+                    'loss_kwh':  float(r.total_loss_kwh),
+                    'loss_pct':  round(float(r.cumulative_loss_percent) * 100, 4),
+                    'status':    r.status,
+                    'report_pk': r.pk,
+                })
 
         # Month-wise aggregated trend (across all DCs)
         monthly_trend = {}
-        all_monthly = MonthlyLossData.objects.filter(
-            report__in=reports
-        ).values('month','month_name').annotate(
-            tot_recv=Sum('net_energy_received'),
-            tot_util=Sum('total_energy_utilised'),
-            tot_loss=Sum('loss_unit'),
-        ).order_by('month')
-        for row in all_monthly:
-            recv = float(row['tot_recv'] or 0)
-            loss = float(row['tot_loss'] or 0)
-            monthly_trend[row['month_name']] = {
-                'received': recv,
-                'utilised': float(row['tot_util'] or 0),
-                'loss': loss,
-                'loss_pct': round(loss/recv*100,4) if recv else 0,
-            }
+        if active_fy and reports.exists():
+            all_monthly = MonthlyLossData.objects.filter(
+                report__in=reports
+            ).values('month','month_name').annotate(
+                tot_recv=Sum('net_energy_received'),
+                tot_util=Sum('total_energy_utilised'),
+                tot_loss=Sum('loss_unit'),
+            ).order_by('month')
+            for row in all_monthly:
+                recv = float(row['tot_recv'] or 0)
+                loss = float(row['tot_loss'] or 0)
+                monthly_trend[row['month_name']] = {
+                    'received': recv,
+                    'utilised': float(row['tot_util'] or 0),
+                    'loss': loss,
+                    'loss_pct': round(loss/recv*100,4) if recv else 0,
+                }
 
         # Top/bottom 5 DCs by loss %
         sorted_dc = sorted(dc_table, key=lambda x: x['loss_pct'], reverse=True)
@@ -229,33 +240,56 @@ class DashboardView(LoginRequiredMixin, View):
             .select_related('report__distribution_center','report__distribution_center__provincial_office')
             .order_by('report__distribution_center__name', 'month')
         )
+        
+        # Group by DC and calculate cumulative correctly
+        from collections import defaultdict
+        dc_data = defaultdict(list)  # dc_name -> list of monthly data
         for md in all_monthly_data:
             dc_name = md.report.distribution_center.name
-            dc_code = md.report.distribution_center.code
-            province = md.report.distribution_center.provincial_office.name
-            report_pk = md.report.pk
-            recv = float(md.net_energy_received)
-            loss = float(md.loss_unit)
-            mpct = round(loss / recv * 100, 4) if recv else 0
-            cpct = round(float(md.cumulative_loss_percent) * 100, 4)
-            key = dc_name
-            if key not in dc_monthly_detail:
-                dc_monthly_detail[key] = {
-                    'dc_name': dc_name,
-                    'dc_code': dc_code,
-                    'province': province,
-                    'report_pk': report_pk,
-                    'months': [],
-                }
-            dc_monthly_detail[key]['months'].append({
-                'month_name': md.month_name,
-                'month': md.month,
-                'received': recv,
-                'utilised': float(md.total_energy_utilised),
-                'loss_unit': loss,
-                'monthly_loss_pct': mpct,
-                'cumul_loss_pct': cpct,
-            })
+            dc_data[dc_name].append(md)
+        
+        # Calculate cumulative loss for each DC
+        for dc_name, monthly_data_list in dc_data.items():
+            dc_code = monthly_data_list[0].report.distribution_center.code
+            province = monthly_data_list[0].report.distribution_center.provincial_office.name
+            report_pk = monthly_data_list[0].report.pk
+            
+            cumulative_received = 0
+            cumulative_utilised = 0
+            
+            dc_monthly_detail[dc_name] = {
+                'dc_name': dc_name,
+                'dc_code': dc_code,
+                'province': province,
+                'report_pk': report_pk,
+                'months': [],
+            }
+            
+            # Sort by month and calculate progressive cumulative
+            monthly_data_list.sort(key=lambda x: x.month)
+            for md in monthly_data_list:
+                recv = float(md.net_energy_received)
+                utilised = float(md.total_energy_utilised)
+                loss = float(md.loss_unit)
+                mpct = round(loss / recv * 100, 4) if recv else 0
+                
+                # Add to cumulative
+                cumulative_received += recv
+                cumulative_utilised += utilised
+                
+                # Calculate cumulative loss %
+                cumulative_loss = cumulative_received - cumulative_utilised
+                cpct = round(cumulative_loss / cumulative_received * 100, 4) if cumulative_received else 0
+                
+                dc_monthly_detail[dc_name]['months'].append({
+                    'month_name': md.month_name,
+                    'month': md.month,
+                    'received': recv,
+                    'utilised': utilised,
+                    'loss_unit': loss,
+                    'monthly_loss_pct': mpct,
+                    'cumul_loss_pct': cpct,  # Now using correct progressive calculation
+                })
 
         # Build per-province monthly detail for sidebar browsing
         prov_monthly_detail = {}
@@ -288,6 +322,80 @@ class DashboardView(LoginRequiredMixin, View):
             if months_list:
                 prov_monthly_detail[po.name] = months_list
 
+        # Build dc_report_table for Report Explorer (for top management) with correct cumulative loss calculation
+        from nea_loss.models import DCYearlyTarget
+        from collections import defaultdict
+        
+        # Load all monthly data for approved reports
+        monthly_qs = MonthlyLossData.objects.filter(
+            report__in=reports
+        ).select_related('report__distribution_center').order_by('report__distribution_center__name', 'month')
+
+        # Group monthly data by DC
+        dc_monthly = defaultdict(dict)  # dc_id -> {month -> MonthlyLossData}
+        for md in monthly_qs:
+            dc_monthly[md.report.distribution_center_id][md.month] = md
+
+        # Load provincial yearly targets
+        targets = {}
+        if active_fy:
+            for t in DCYearlyTarget.objects.filter(fiscal_year=active_fy):
+                targets[t.distribution_center_id] = float(t.target_loss_percent)
+
+        # Build table rows
+        dc_report_table = []
+        # Only show months that have approved reports
+        approved_months = sorted(set(
+            md.month for md in monthly_qs
+        ))
+        
+        # If no approved months, show empty
+        if not approved_months:
+            approved_months = []
+
+        for dc in DistributionCenter.objects.filter(is_active=True).order_by('name'):
+            dc_report = reports.filter(distribution_center=dc).first()
+            month_rows = []
+            
+            # Calculate cumulative loss progressively for each approved month
+            cumulative_received = 0
+            cumulative_utilised = 0
+            
+            # Get all months in order and calculate cumulative progressively
+            for m in approved_months:
+                md = dc_monthly.get(dc.pk, {}).get(m)
+                target = targets.get(dc.pk)  # Use yearly target for all months
+                
+                # Always calculate cumulative, but only add if DC has data for this month
+                if md and md.net_energy_received:
+                    cumulative_received += float(md.net_energy_received)
+                if md and md.total_energy_utilised:
+                    cumulative_utilised += float(md.total_energy_utilised)
+                
+                # Calculate cumulative loss % up to this month
+                cumulative_loss = cumulative_received - cumulative_utilised
+                cumulative_loss_pct = round(cumulative_loss / cumulative_received * 100, 4) if cumulative_received else 0
+                
+                # Only include month row if this DC has approved data for this month
+                if md:  # Only show months where DC has data
+                    month_rows.append({
+                        'month': m,
+                        'month_name': MONTH_NAMES.get(m, ''),
+                        'received': float(md.net_energy_received) if md else None,
+                        'sold': float(md.total_energy_utilised) if md else None,
+                        'loss_unit': float(md.loss_unit) if md else None,
+                        'monthly_loss_pct': round(float(md.monthly_loss_percent) * 100, 4) if md else None,
+                        'cumulative_loss_pct': cumulative_loss_pct,  # This will show proper cumulative
+                        'target': target,
+                        'status': 'APPROVED',  # All shown data is approved
+                    })
+            dc_report_table.append({
+                'dc': dc,
+                'report': dc_report,
+                'month_rows': month_rows,
+                'has_data': any(r['received'] is not None for r in month_rows),
+            })
+
         return {
             'total_received_kwh':   float(total_received),
             'total_utilised_kwh':   float(total_utilised),
@@ -313,6 +421,7 @@ class DashboardView(LoginRequiredMixin, View):
             'month_names_list':     list(MONTH_NAMES.values()),
             'dc_monthly_detail':    dc_monthly_detail,      # for sidebar DC browser
             'prov_monthly_detail':  prov_monthly_detail,    # for sidebar province browser
+            'dc_report_table':      dc_report_table if 'dc_report_table' in locals() else [],  # Safe: only if exists
         }
 
     def _get_provincial_context(self, user, active_fy):
@@ -335,7 +444,7 @@ class DashboardView(LoginRequiredMixin, View):
         dcs = DistributionCenter.objects.filter(provincial_office=po).order_by('name')
 
         # Load all monthly data for approved reports under this province
-        from nea_loss.models import MonthlyLossData, DCMonthlyTarget
+        from nea_loss.models import MonthlyLossData, DCYearlyTarget
         monthly_qs = MonthlyLossData.objects.filter(
             report__in=approved_reports
         ).select_related('report__distribution_center').order_by('report__distribution_center__name', 'month')
@@ -346,38 +455,63 @@ class DashboardView(LoginRequiredMixin, View):
         for md in monthly_qs:
             dc_monthly[md.report.distribution_center_id][md.month] = md
 
-        # Load provincial targets
+        # Load provincial yearly targets
         targets = {}
         if active_fy:
-            for t in DCMonthlyTarget.objects.filter(
+            for t in DCYearlyTarget.objects.filter(
                 fiscal_year=active_fy,
                 distribution_center__provincial_office=po
             ):
-                targets[(t.distribution_center_id, t.month)] = float(t.target_loss_percent)
+                targets[t.distribution_center_id] = float(t.target_loss_percent)
 
         # Build table rows
         dc_report_table = []
-        all_months_seen = sorted(set(
-            m for dc_data in dc_monthly.values() for m in dc_data.keys()
-        )) or list(range(1, 13))
+        # Only show months that have approved reports
+        # Since monthly_qs already filters approved_reports, we just need to get unique months
+        approved_months = sorted(set(
+            md.month for md in monthly_qs
+        ))
+        
+        # If no approved months, show empty
+        if not approved_months:
+            approved_months = []
 
         for dc in dcs:
             dc_report = all_reports.filter(distribution_center=dc).first()
             month_rows = []
-            for m in all_months_seen:
+            
+            # Calculate cumulative loss progressively for each approved month
+            cumulative_received = 0
+            cumulative_utilised = 0
+            
+            # Get all months in order and calculate cumulative progressively
+            for m in approved_months:
                 md = dc_monthly.get(dc.pk, {}).get(m)
-                target = targets.get((dc.pk, m))
-                month_rows.append({
-                    'month': m,
-                    'month_name': MONTH_NAMES.get(m, ''),
-                    'received': float(md.net_energy_received) if md else None,
-                    'sold': float(md.total_energy_utilised) if md else None,
-                    'loss_unit': float(md.loss_unit) if md else None,
-                    'monthly_loss_pct': round(float(md.monthly_loss_percent) * 100, 4) if md else None,
-                    'cumulative_loss_pct': round(float(md.cumulative_loss_percent) * 100, 4) if md else None,
-                    'target': target,
-                    'status': dc_report.status if dc_report else None,
-                })
+                target = targets.get(dc.pk)  # Use yearly target for all months
+                
+                # Always calculate cumulative, but only add if DC has data for this month
+                if md and md.net_energy_received:
+                    cumulative_received += float(md.net_energy_received)
+                if md and md.total_energy_utilised:
+                    cumulative_utilised += float(md.total_energy_utilised)
+                
+                # Calculate cumulative loss % up to this month
+                cumulative_loss = cumulative_received - cumulative_utilised
+                cumulative_loss_pct = round(cumulative_loss / cumulative_received * 100, 4) if cumulative_received else 0
+                
+                # Only include month row if this DC has approved data for this month
+                if md:  # Only show months where DC has data
+                    month_rows.append({
+                        'month': m,
+                        'month_name': MONTH_NAMES.get(m, ''),
+                        'received': float(md.net_energy_received) if md else None,
+                        'sold': float(md.total_energy_utilised) if md else None,
+                        'loss_unit': float(md.loss_unit) if md else None,
+                        'monthly_loss_pct': round(float(md.monthly_loss_percent) * 100, 4) if md else None,
+                        'cumulative_loss_pct': cumulative_loss_pct,  # This will show proper cumulative
+                        'target': target,
+                        'status': 'APPROVED',  # All shown data is approved
+                    })
             dc_report_table.append({
                 'dc': dc,
                 'report': dc_report,
@@ -403,8 +537,8 @@ class DashboardView(LoginRequiredMixin, View):
             'overall_loss_pct': overall_loss_pct,
             'target_loss_pct': float(active_fy.loss_target_percent) if active_fy else 3.35,
             'dc_report_table': dc_report_table,
-            'all_months': [MONTH_NAMES[m] for m in all_months_seen],
-            'all_month_nums': all_months_seen,
+            'all_months': [MONTH_NAMES[m] for m in approved_months],
+            'all_month_nums': approved_months,
         }
 
     def _get_dc_context(self, user, active_fy):
@@ -420,31 +554,43 @@ class DashboardView(LoginRequiredMixin, View):
         }
         ALL_MONTHS = list(range(1, 13))
 
-        # Provincial monthly targets for this DC
+        # Provincial yearly targets for this DC
         prov_targets = {}
         if active_fy and dc:
-            for t in DCMonthlyTarget.objects.filter(
+            yearly_target = DCYearlyTarget.objects.filter(
                 distribution_center=dc, fiscal_year=active_fy
-            ):
-                prov_targets[t.month] = float(t.target_loss_percent)
+            ).first()
+            prov_targets = float(yearly_target.target_loss_percent) if yearly_target else None
 
-        # Build all 12 month columns — entered months have data, future months are blank
+        # Initialize variables
         dc_monthly_cols = []
-        cumulative_received = decimal.Decimal('0')
-        cumulative_loss     = decimal.Decimal('0')
+        approved_months = []
+        ytd_received = 0
+        ytd_loss = 0
+        ytd_sold = 0
+        ytd_loss_pct = 0
 
-        # Map of entered monthly data
-        entered_map = {}  # month_num -> MonthlyLossData
-        approved_monthly_data = {}  # month_num -> MonthlyLossData (approved only, for feeders)
-
-        if report:
-            for md in report.monthly_data.order_by('month'):
-                entered_map[md.month] = md
-                if report.status == 'APPROVED':
-                    approved_monthly_data[md.month] = md
-
-            # Feeder readings across all entered months
-            month_pks = list(entered_map[m].pk for m in entered_map)
+        # Build columns from ALL approved reports for current DC
+        approved_reports = LossReport.objects.filter(
+            distribution_center=dc,
+            fiscal_year=active_fy,
+            status='APPROVED'
+        ).order_by('created_at')
+        
+        if approved_reports:
+            # Collect all monthly data from ALL approved reports
+            all_monthly_data = []
+            for report in approved_reports:
+                all_monthly_data.extend(report.monthly_data.all())
+            
+            # Sort by month number to ensure proper order
+            all_monthly_data.sort(key=lambda x: x.month)
+            
+            cumulative_received = decimal.Decimal('0')
+            cumulative_loss = decimal.Decimal('0')
+            
+            # Build feeder readings for all approved reports
+            month_pks = [md.pk for md in all_monthly_data]
             deleted_pairs = set(
                 MonthlyMeterPointStatus.objects.filter(
                     monthly_data_id__in=month_pks, is_active=False
@@ -452,7 +598,7 @@ class DashboardView(LoginRequiredMixin, View):
             )
             all_readings = (
                 MeterReading.objects
-                .filter(monthly_data__report=report)
+                .filter(monthly_data__in=all_monthly_data)
                 .select_related('meter_point')
                 .order_by('meter_point__source_type', 'meter_point__name')
             )
@@ -468,11 +614,8 @@ class DashboardView(LoginRequiredMixin, View):
                 ).order_by('source_type', 'name')
             )
 
-        # Build 12 columns
-        for m_num in ALL_MONTHS:
-            md = entered_map.get(m_num) if report else None
-
-            if md:
+            # Build columns for ALL approved months from ALL reports
+            for md in all_monthly_data:
                 received   = float(md.net_energy_received)
                 sold       = float(md.total_energy_utilised)
                 import_kwh = float(md.total_energy_import)
@@ -486,28 +629,27 @@ class DashboardView(LoginRequiredMixin, View):
                     float(cumulative_loss) / float(cumulative_received) * 100, 4
                 ) if cumulative_received else 0
 
-                prov_target = prov_targets.get(m_num)
+                prov_target = prov_targets
 
-                # Build feeder list for this month (only if report is approved)
+                # Build feeder list for this month
                 feeders = []
-                if report and report.status == 'APPROVED':
-                    for mp in all_feeders:
-                        if (md.pk, mp.pk) in deleted_pairs:
-                            continue
-                        r = reading_map.get((md.pk, mp.pk))
-                        feeders.append({
-                            'name': mp.name,
-                            'type': mp.get_source_type_display(),
-                            'is_export': mp.source_type in export_types,
-                            'prev': float(r.previous_reading) if r else None,
-                            'pres': float(r.present_reading)  if r else None,
-                            'mf':   float(r.multiplying_factor) if r else 1,
-                            'kwh':  float(r.unit_kwh) if r else None,
-                        })
+                for mp in all_feeders:
+                    if (md.pk, mp.pk) in deleted_pairs:
+                        continue
+                    r = reading_map.get((md.pk, mp.pk))
+                    feeders.append({
+                        'name': mp.name,
+                        'type': mp.get_source_type_display(),
+                        'is_export': mp.source_type in export_types,
+                        'prev': float(r.previous_reading) if r else None,
+                        'pres': float(r.present_reading)  if r else None,
+                        'mf':   float(r.multiplying_factor) if r else 1,
+                        'kwh':  float(r.unit_kwh) if r else None,
+                    })
 
                 dc_monthly_cols.append({
-                    'month':            m_num,
-                    'month_name':       MONTH_NAMES[m_num],
+                    'month':            md.month,
+                    'month_name':       MONTH_NAMES[md.month],
                     'has_data':         True,
                     'import_kwh':       import_kwh,
                     'export_kwh':       export_kwh,
@@ -515,39 +657,21 @@ class DashboardView(LoginRequiredMixin, View):
                     'sold':             sold,
                     'loss_unit':        loss_unit,
                     'monthly_loss_pct': monthly_loss_pct,
+                    'cumulative_loss_pct': cum_loss_pct,
                     'prov_target':      prov_target,
-                    'status':           report.status,
-                    'report_pk':        report.pk,
+                    'status':           'APPROVED',
+                    'report_pk':        md.report.pk,
                     'feeders':          feeders,
                 })
-            else:
-                # Future / not-yet-entered month — show as empty column
-                dc_monthly_cols.append({
-                    'month':            m_num,
-                    'month_name':       MONTH_NAMES[m_num],
-                    'has_data':         False,
-                    'import_kwh':       None,
-                    'export_kwh':       None,
-                    'received':         None,
-                    'sold':             None,
-                    'loss_unit':        None,
-                    'monthly_loss_pct': None,
-                    'prov_target':      prov_targets.get(m_num),
-                    'status':           None,
-                    'feeders':          [],
-                })
 
-        # YTD totals (only from entered months)
-        ytd_received = float(cumulative_received)
-        ytd_loss     = float(cumulative_loss)
-        ytd_sold     = sum(c['sold'] for c in dc_monthly_cols if c['has_data'] and c['sold'] is not None)
-        ytd_loss_pct = round(ytd_loss / ytd_received * 100, 4) if ytd_received else 0
-
-        # Approved months for feeder slideshow
-        approved_months = [
-            c for c in dc_monthly_cols
-            if c['has_data'] and c['status'] == 'APPROVED' and c['feeders']
-        ]
+            # YTD totals from all approved months
+            ytd_received = float(cumulative_received)
+            ytd_loss     = float(cumulative_loss)
+            ytd_sold     = sum(c['sold'] for c in dc_monthly_cols if c['sold'] is not None)
+            ytd_loss_pct = round(ytd_loss / ytd_received * 100, 4) if ytd_received else 0
+            
+            # Approved months are the columns we just built
+            approved_months = dc_monthly_cols
 
         return {
             'distribution_center':    dc,
@@ -655,20 +779,44 @@ class ReportCreateView(LoginRequiredMixin, View):
     template_name = 'nea_loss/reports/create.html'
 
     def dispatch(self, request, *args, **kwargs):
-        if request.user.is_authenticated and not _can_create_loss_report(request.user):
-            messages.error(
-                request,
-                'Only distribution center and provincial office users can create loss reports. '
-                'Head office roles can view reports, analytics, and approvals from the menu.',
-            )
-            return redirect('report_list')
+        if request.user.is_authenticated:
+            # Check if user is DC level and needs admin override
+            if request.user.is_dc_level and not _can_create_loss_report(request.user):
+                # Check if admin override should be used
+                if _can_admin_override_create_report(request.user):
+                    # Use admin override function
+                    return super().dispatch(request, *args, **kwargs)
+                else:
+                    # Use normal DC restrictions
+                    messages.error(
+                        request,
+                        'Only distribution center and provincial office users can create loss reports. '
+                        'Head office roles can view reports, analytics, and approvals from the menu.',
+                    )
+                    return redirect('report_list')
+            else:
+                # Non-DC users use normal restrictions
+                if not _can_create_loss_report(request.user):
+                    messages.error(
+                        request,
+                        'Only distribution center and provincial office users can create loss reports. '
+                        'Head office roles can view reports, analytics, and approvals from the menu.',
+                    )
+                    return redirect('report_list')
         return super().dispatch(request, *args, **kwargs)
 
     def get(self, request):
         user = request.user
+        print(f"DEBUG: User {user.username} - is_dc_level: {user.is_dc_level} - is_provincial: {user.is_provincial}")
+        if user.is_dc_level:
+            print(f"DEBUG: User's DC: {user.distribution_center}")
+        if user.is_provincial:
+            print(f"DEBUG: User's Province: {user.provincial_office}")
+        
         dcs = DistributionCenter.objects.all()
         if user.is_dc_level and user.distribution_center:
             dcs = dcs.filter(pk=user.distribution_center.pk)
+            print(f"DEBUG: Filtered to DC: {dcs.first().name if dcs.exists() else 'None'}")
         elif user.is_provincial and user.provincial_office:
             # Provincial users should not create reports - disable DC selection
             dcs = DistributionCenter.objects.none()
@@ -679,15 +827,77 @@ class ReportCreateView(LoginRequiredMixin, View):
             )
             return redirect('report_list')
 
-        # Calculate available months based on existing reports
+        # Calculate available months based on existing reports and approval status
         all_months = [
             (1,'Shrawan'),(2,'Bhadra'),(3,'Ashwin'),(4,'Kartik'),
             (5,'Mangsir'),(6,'Poush'),(7,'Magh'),(8,'Falgun'),
             (9,'Chaitra'),(10,'Baisakh'),(11,'Jestha'),(12,'Ashadh'),
         ]
         
-        # For now, show all months - the validation will handle the logic
-        months_list = all_months
+        # Filter months to only show available options
+        available_months = []
+        active_fy = FiscalYear.objects.filter(is_active=True).first()
+        
+        for month_num, month_name in all_months:
+            # Check if this month can be created
+            can_create = True
+            
+            # First check: Only show months from start month onwards
+            if active_fy and dcs.exists():
+                dc_start_month = dcs.first().report_start_month
+                if month_num < dc_start_month:
+                    # Skip months before the start month entirely
+                    can_create = False
+                    continue
+            
+            # Check if report already exists for this month
+            if active_fy and can_create:
+                existing_report = LossReport.objects.filter(
+                    distribution_center__in=dcs,
+                    fiscal_year=active_fy,
+                    month=month_num
+                ).first()
+                
+                if existing_report:
+                    can_create = False
+            
+            # For months other than Shrawan, check if previous month is approved
+            # But skip this check for months before the DC's start month
+            if month_num > 1 and can_create:
+                # For each DC, check if this month is before its start month
+                # If it's before any DC's start month, skip the previous month check
+                skip_previous_check = False
+                for dc in dcs:
+                    if month_num < dc.report_start_month:
+                        skip_previous_check = True
+                        break
+                
+                if not skip_previous_check:
+                    previous_month = month_num - 1
+                    previous_report = LossReport.objects.filter(
+                        distribution_center__in=dcs,
+                        fiscal_year=active_fy,
+                        month=previous_month,
+                        status='APPROVED'
+                    ).first()
+                    
+                    if not previous_report:
+                        can_create = False
+            
+            if can_create:
+                available_months.append((month_num, month_name))
+        
+        months_list = available_months
+        
+        # Debug output
+        print(f"DEBUG: Available months for {dcs.count()} DC(s): {months_list}")
+        print(f"DEBUG: Total DCs in query: {dcs.count()}")
+        print(f"DEBUG: User: {request.user.username} - is_dc_level: {request.user.is_dc_level} - is_provincial: {request.user.is_provincial}")
+        for dc in dcs:
+            print(f"DEBUG: DC {dc.name} (ID: {dc.id}) - Start Month: {dc.report_start_month}")
+        print(f"DEBUG: Active Fiscal Year: {active_fy.year_bs if active_fy else 'None'}")
+        print(f"DEBUG: Available months list: {months_list}")
+        print(f"DEBUG: All months list: {all_months}")
         
         return render(request, self.template_name, {
             'fiscal_years': FiscalYear.objects.all(),
@@ -726,27 +936,30 @@ class ReportCreateView(LoginRequiredMixin, View):
             messages.error(request, 'Selected month is invalid.')
             return self.get(request)
 
-        # Allow gap months: require only that at least one approved report exists
-        # before this month — not necessarily month-1. This lets a DC resume after
-        # a gap (e.g. 3 inactive months) from any later month.
-        if month > 1:
-            last_approved = LossReport.objects.filter(
-                distribution_center=dc,
-                fiscal_year=fy,
-                month__lt=month,
-                status='APPROVED',
-            ).order_by('-month').first()
-
-            # Block only if no approved report exists before this month AND
-            # this is not the DC's configured start month.
-            if last_approved is None and month != dc.report_start_month:
-                messages.error(
-                    request,
-                    f'No approved report exists before {month_names.get(month, "")}. '
-                    f'Please approve an earlier month first, or ask admin to set '
-                    f"this DC's start month to {month_names.get(month, '')}."
-                )
-                return self.get(request)
+        # Check if previous month is approved (except for Shrawan and months before start month)
+        if month > 1:  # Not Shrawan
+            # If this month is >= the DC's start month, check previous month approval
+            if month >= dc.report_start_month:
+                previous_month = month - 1
+                try:
+                    previous_report = LossReport.objects.get(
+                        distribution_center=dc,
+                        fiscal_year=fy,
+                        month=previous_month
+                    )
+                    if previous_report.status != 'APPROVED':
+                        messages.error(
+                            request,
+                            f'Previous month report ({month_names.get(previous_month, "")}) must be approved before creating {month_names.get(month, "")} report.'
+                        )
+                        return self.get(request)
+                except LossReport.DoesNotExist:
+                    messages.error(
+                        request,
+                        f'Previous month report ({month_names.get(previous_month, "")}) doesn\'t exist. Please create that first.'
+                    )
+                    return self.get(request)
+            # If month < start month, skip previous month check completely
 
         allowed = DistributionCenter.objects.all()
         if user.is_dc_level and user.distribution_center:
@@ -790,7 +1003,7 @@ class ReportCreateView(LoginRequiredMixin, View):
 
 
 class ReportDetailView(LoginRequiredMixin, View):
-    template_name = 'nea_loss/reports/detail.html'
+    template_name = 'nea_loss/reports/report_detail.html'
 
     def get(self, request, pk):
         report = get_object_or_404(LossReport, pk=pk)
@@ -814,7 +1027,7 @@ class ReportDetailView(LoginRequiredMixin, View):
             'cumulative_pct': [round(float(m.cumulative_loss_percent) * 100, 2) for m in monthly_data],
         }
 
-        dc = user.distribution_center if user.is_dc_level else None
+        dc = request.user.distribution_center if request.user.is_dc_level else None
         start_month = dc.report_start_month if dc else 1
         all_months = [
             (1,'Shrawan'),(2,'Bhadra'),(3,'Ashwin'),(4,'Kartik'),
@@ -873,30 +1086,53 @@ class MonthlyDataView(LoginRequiredMixin, View):
         previous_readings_dict = {}
         
         if month > 1:  # For months after Shrawan
-            # Find the most recent approved report BEFORE this month.
-            # Does NOT require month-1 — supports DCs resuming after a gap.
-            last_approved_report = LossReport.objects.filter(
-                distribution_center=report.distribution_center,
-                fiscal_year=report.fiscal_year,
-                month__lt=month,
-                status='APPROVED',
-            ).order_by('-month').first()
-
-            if last_approved_report:
-                try:
-                    last_monthly = MonthlyLossData.objects.get(
-                        report=last_approved_report,
-                        month=last_approved_report.month,
+            previous_month = month - 1
+            try:
+                # First check if previous month report exists and is approved
+                previous_loss_report = LossReport.objects.get(
+                    distribution_center=report.distribution_center,
+                    fiscal_year=report.fiscal_year,
+                    month=previous_month
+                )
+                
+                if previous_loss_report.status != 'APPROVED':
+                    messages.error(
+                        request,
+                        f'Previous month report ({month_names.get(previous_month, "")}) must be approved before creating {month_names.get(month, "")} report.'
                     )
-                    for prev_reading in last_monthly.meter_readings.select_related('meter_point').all():
+                    return redirect('report_create')
+                
+                # Then get monthly data and create previous readings dictionary
+                try:
+                    previous_month_report = MonthlyLossData.objects.get(
+                        report=previous_loss_report,
+                        month=previous_month
+                    )
+                    # Create dictionary of previous readings for each meter point
+                    # Only carry forward for non-single-reading types
+                    for prev_reading in previous_month_report.meter_readings.select_related('meter_point').all():
                         if not prev_reading.meter_point.is_single_reading:
                             previous_readings_dict[prev_reading.meter_point_id] = prev_reading.present_reading or 0
+                    
+                    # Debug: Print what we found
+                                
                 except MonthlyLossData.DoesNotExist:
-                    pass  # No monthly data in last approved report — use zeros
-            # If no last_approved_report: this is the first report, all previous readings = 0
+                    # Previous month report exists but no monthly data yet
+                    # This is OK - just use 0 for all meter points
+                    pass
+                    
+            except LossReport.DoesNotExist:
+                # Previous month report doesn't exist
+                if request.user.is_dc_level:  # Only show error to DC users
+                    messages.error(
+                        request,
+                        f'Previous month report ({month_names.get(previous_month, "")}) hasn\'t been created. Please create that first.'
+                    )
+                    return redirect('report_create')
         else:
             # For Shrawan (month 1), previous reading is 0
-            previous_month_present_reading = 0
+            if month == 1:
+                previous_month_present_reading = 0
         
         # Editable flows must have a MonthlyLossData row to persist AJAX saves.
         if can_edit:
@@ -995,16 +1231,14 @@ class MonthlyDataView(LoginRequiredMixin, View):
             | Q(distribution_center_id=report.distribution_center_id)
         ).order_by('display_order', 'name')
 
-        # Load DC monthly target for this month (set by provincial office)
-        dc_monthly_target = None
+        # Load DC yearly target for this fiscal year (set by provincial office)
+        dc_yearly_target = None
         if report.fiscal_year:
-            t = DCMonthlyTarget.objects.filter(
+            t = DCYearlyTarget.objects.filter(
                 distribution_center=report.distribution_center,
                 fiscal_year=report.fiscal_year,
-                month=month,
             ).first()
-            if t:
-                dc_monthly_target = float(t.target_loss_percent)
+            dc_yearly_target = float(t.target_loss_percent) if t else None
 
         existing_utilisations = {e.consumer_category_id: e for e in monthly.energy_utilisations.all()} if monthly else {}
         existing_counts = {c.consumer_category_id: c for c in monthly.consumer_counts.all()} if monthly else {}
@@ -1038,7 +1272,7 @@ class MonthlyDataView(LoginRequiredMixin, View):
             'export_type_choices': export_type_choices,
             'new_meter_point_ids': list(new_meter_point_ids),
             'single_reading_ids': list(single_reading_ids),  # ENERGY_IMPORT / ENERGY_EXPORT
-            'dc_monthly_target': dc_monthly_target,
+            'dc_yearly_target': dc_yearly_target,
         })
 
 
@@ -1450,7 +1684,121 @@ class ComparisonView(LoginRequiredMixin, View):
         })
 
 
-# ─────────────────────────── DC MONTHLY TARGETS (PROVINCIAL) ───────────────────────────
+# ─────────────────────────── DC YEARLY TARGETS (PROVINCIAL) ───────────────────────────
+
+class DCYearlyTargetView(LoginRequiredMixin, View):
+    """Provincial manager sets yearly loss % targets for each DC under their office."""
+    template_name = 'nea_loss/reports/dc_yearly_targets.html'
+
+    def dispatch(self, request, *args, **kwargs):
+        user = request.user
+        if user.is_authenticated:
+            if not (getattr(user, 'is_system_admin', False) or user.is_provincial or user.is_top_management):
+                messages.error(request, 'Only provincial managers can set DC yearly targets.')
+                return redirect('dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request):
+        user = request.user
+        active_fy = FiscalYear.objects.filter(is_active=True).first()
+
+        if getattr(user, 'is_system_admin', False) or user.is_top_management:
+            dcs = DistributionCenter.objects.select_related('provincial_office').all().order_by('provincial_office__name', 'name')
+        else:
+            po = user.provincial_office
+            dcs = DistributionCenter.objects.filter(provincial_office=po).order_by('name') if po else DistributionCenter.objects.none()
+
+        # Build current targets map: {dc_id: target_loss_percent}
+        existing_targets = {}
+        if active_fy:
+            for t in DCYearlyTarget.objects.filter(fiscal_year=active_fy, distribution_center__in=dcs):
+                existing_targets[t.distribution_center_id] = float(t.target_loss_percent)
+
+        dc_rows = []
+        for dc in dcs:
+            # Determine if this DC's target can be edited
+            target_exists = dc.pk in existing_targets
+            
+            # Provincial users can only edit if target doesn't exist yet
+            # Admin users can always edit
+            can_edit = False
+            if getattr(user, 'is_system_admin', False) or user.is_top_management:
+                can_edit = True  # Admin can always edit
+            elif user.is_provincial:
+                can_edit = not target_exists  # Provincial can edit only if no target exists yet
+            
+            dc_rows.append({
+                'dc': dc,
+                'target': existing_targets.get(dc.pk, ''),
+                'can_edit': can_edit,
+                'target_exists': target_exists,
+            })
+
+        return render(request, self.template_name, {
+            'active_fy': active_fy,
+            'dc_rows': dc_rows,
+        })
+
+    def post(self, request):
+        user = request.user
+        active_fy = FiscalYear.objects.filter(is_active=True).first()
+        if not active_fy:
+            messages.error(request, 'No active fiscal year found.')
+            return redirect('dc_yearly_targets')
+
+        if getattr(user, 'is_system_admin', False) or user.is_top_management:
+            allowed_dcs = set(DistributionCenter.objects.values_list('pk', flat=True))
+        else:
+            po = user.provincial_office
+            allowed_dcs = set(DistributionCenter.objects.filter(provincial_office=po).values_list('pk', flat=True)) if po else set()
+
+        saved = 0
+        for key, val in request.POST.items():
+            # key format: target_<dc_id>
+            if not key.startswith('target_'):
+                continue
+            parts = key.split('_')
+            if len(parts) != 2:
+                continue
+            try:
+                dc_id = int(parts[1])
+                val = val.strip()
+                if not val:
+                    # Delete existing target if blank submitted (admin only)
+                    if getattr(user, 'is_system_admin', False) or user.is_top_management:
+                        DCYearlyTarget.objects.filter(
+                            distribution_center_id=dc_id, fiscal_year=active_fy
+                        ).delete()
+                    continue
+                target_pct = float(val)
+            except (ValueError, TypeError):
+                continue
+
+            if dc_id not in allowed_dcs:
+                continue
+
+            # Check if target already exists
+            existing_target = DCYearlyTarget.objects.filter(
+                distribution_center_id=dc_id, fiscal_year=active_fy
+            ).first()
+            
+            # Provincial users cannot edit existing targets
+            if existing_target and user.is_provincial:
+                continue  # Skip this DC, provincial user cannot edit existing target
+            
+            # Admin users can always edit, provincial users can only create new targets
+            DCYearlyTarget.objects.update_or_create(
+                distribution_center_id=dc_id,
+                fiscal_year=active_fy,
+                defaults={'target_loss_percent': target_pct, 'set_by': user},
+            )
+            saved += 1
+
+        messages.success(request, f'Saved {saved} yearly target(s) successfully.')
+        return redirect('dc_yearly_targets')
+
+
+# ─────────────────────────── DC MONTHLY TARGETS (DEPRECATED) ───────────────────────────
 
 class DCMonthlyTargetView(LoginRequiredMixin, View):
     """Provincial manager sets monthly loss % targets for each DC under their office."""
@@ -2132,8 +2480,16 @@ def _can_create_loss_report(user):
     if getattr(user, 'is_system_admin', False):
         return True
     if user.is_dc_level:
-        return bool(getattr(user, 'distribution_center_id', None))
+        return bool(getattr(user, 'distribution_center', None))
     # Provincial, MD, DMD, Director cannot create DC-level loss reports
+    return False
+
+def _can_admin_override_create_report(user):
+    """Admin users can create reports for any DC regardless of existing reports."""
+    if not user.is_authenticated:
+        return False
+    if getattr(user, 'is_system_admin', False):
+        return True
     return False
 
 
@@ -2177,101 +2533,112 @@ def _can_approve_report(user):
 
 # ─────────────────────────── MESSAGING VIEWS ───────────────────────────
 
+# Messaging
 class MessageInboxView(LoginRequiredMixin, View):
-    template_name = 'nea_loss/messages/inbox.html'
+    template_name = 'nea_loss/users/inbox.html'
 
     def get(self, request):
-        inbox = Message.objects.filter(recipient=request.user, parent__isnull=True).select_related('sender').order_by('-created_at')
-        sent  = Message.objects.filter(sender=request.user,    parent__isnull=True).select_related('recipient').order_by('-created_at')
-        users = NEAUser.objects.filter(is_active=True).exclude(pk=request.user.pk).order_by('full_name')
+        inbox = Message.objects.filter(recipient=request.user).select_related('sender').order_by('-created_at')
+        sent = Message.objects.filter(sender=request.user).select_related('recipient').order_by('-created_at')
         unread_count = inbox.filter(is_read=False).count()
+        
         return render(request, self.template_name, {
             'inbox': inbox,
-            'sent':  sent,
-            'users': users,
+            'sent': sent,
             'unread_count': unread_count,
-            'active_tab': request.GET.get('tab', 'inbox'),
+        })
+
+
+class MessageComposeView(LoginRequiredMixin, View):
+    template_name = 'nea_loss/users/message_compose.html'
+
+    def get(self, request):
+        # Get all users except current user
+        users = NEAUser.objects.exclude(pk=request.user.pk).order_by('full_name')
+        return render(request, self.template_name, {
+            'users': users,
         })
 
     def post(self, request):
         recipient_id = request.POST.get('recipient')
-        subject      = (request.POST.get('subject') or '').strip()
-        body         = (request.POST.get('body') or '').strip()
+        subject = request.POST.get('subject')
+        body = request.POST.get('body')
+
         if not recipient_id or not subject or not body:
             messages.error(request, 'Please fill in all fields.')
-            return redirect('message_inbox')
+            return self.get(request)
+
         try:
             recipient = NEAUser.objects.get(pk=recipient_id)
+            message = Message.objects.create(
+                sender=request.user,
+                recipient=recipient,
+                subject=subject,
+                body=body
+            )
+            messages.success(request, 'Message sent successfully.')
+            return redirect('message_inbox')
         except NEAUser.DoesNotExist:
             messages.error(request, 'Recipient not found.')
-            return redirect('message_inbox')
-        Message.objects.create(sender=request.user, recipient=recipient, subject=subject, body=body)
-        # Create a notification for the recipient
-        Notification.objects.create(
-            recipient=recipient,
-            notification_type='REMINDER',
-            title=f'New message from {request.user.full_name}',
-            message=f'Subject: {subject}',
-        )
-        messages.success(request, f'Message sent to {recipient.full_name}.')
-        return redirect('message_inbox')
+            return self.get(request)
 
 
 class MessageDetailView(LoginRequiredMixin, View):
-    template_name = 'nea_loss/messages/detail.html'
+    template_name = 'nea_loss/reports/message_detail.html'
 
     def get(self, request, pk):
-        msg = get_object_or_404(Message, pk=pk)
-        if msg.recipient != request.user and msg.sender != request.user:
-            messages.error(request, 'You do not have permission to view this message.')
-            return redirect('message_inbox')
-        # Mark as read
-        if msg.recipient == request.user and not msg.is_read:
-            msg.is_read = True
-            msg.save(update_fields=['is_read'])
-        replies = msg.replies.select_related('sender', 'recipient').order_by('created_at')
-        users = NEAUser.objects.filter(is_active=True).exclude(pk=request.user.pk).order_by('full_name')
-        return render(request, self.template_name, {'msg': msg, 'replies': replies, 'users': users})
-
-    def post(self, request, pk):
-        parent = get_object_or_404(Message, pk=pk)
-        if parent.recipient != request.user and parent.sender != request.user:
-            return redirect('message_inbox')
-        body = (request.POST.get('body') or '').strip()
-        if not body:
-            messages.error(request, 'Reply cannot be empty.')
-            return redirect('message_detail', pk=pk)
-        # Reply goes to the other person
-        reply_to = parent.sender if parent.recipient == request.user else parent.recipient
-        Message.objects.create(
-            sender=request.user,
-            recipient=reply_to,
-            subject=f'Re: {parent.subject}',
-            body=body,
-            parent=parent,
-        )
-        Notification.objects.create(
-            recipient=reply_to,
-            notification_type='REMINDER',
-            title=f'Reply from {request.user.full_name}',
-            message=f'Re: {parent.subject}',
-        )
-        messages.success(request, 'Reply sent.')
-        return redirect('message_detail', pk=pk)
+        message = get_object_or_404(Message, Q(pk=pk) & (Q(sender=request.user) | Q(recipient=request.user)))
+        
+        # Mark as read if recipient
+        if message.recipient == request.user and not message.is_read:
+            message.is_read = True
+            message.save()
+        
+        # Get replies
+        replies = Message.objects.filter(parent=message).order_by('created_at')
+        
+        return render(request, self.template_name, {
+            'msg': message,
+            'replies': replies,
+        })
 
 
 @login_required
 def message_delete(request, pk):
-    msg = get_object_or_404(Message, pk=pk)
-    if msg.sender == request.user or msg.recipient == request.user:
-        msg.delete()
-        messages.success(request, 'Message deleted.')
+    message = get_object_or_404(Message, Q(pk=pk) & (Q(sender=request.user) | Q(recipient=request.user)))
+    message.delete()
+    messages.success(request, 'Message deleted successfully.')
     return redirect('message_inbox')
 
 
 @login_required
+def message_reply(request, pk):
+    parent_message = get_object_or_404(Message, Q(pk=pk) & (Q(sender=request.user) | Q(recipient=request.user)))
+    
+    if request.method == 'POST':
+        body = request.POST.get('body')
+        if not body:
+            messages.error(request, 'Please enter a message.')
+            return redirect('message_detail', pk=pk)
+        
+        # Determine recipient (reply to the other person)
+        recipient = parent_message.sender if parent_message.recipient == request.user else parent_message.recipient
+        
+        reply = Message.objects.create(
+            sender=request.user,
+            recipient=recipient,
+            subject=f"Re: {parent_message.subject}",
+            body=body,
+            parent=parent_message
+        )
+        
+        messages.success(request, 'Reply sent successfully.')
+        return redirect('message_detail', pk=pk)
+
+
+@login_required
 def api_unread_messages(request):
-    count = Message.objects.filter(recipient=request.user, is_read=False, parent__isnull=True).count()
+    count = Message.objects.filter(recipient=request.user, is_read=False).count()
     return JsonResponse({'unread': count})
 
 
@@ -2307,16 +2674,15 @@ class ProvincialReportCreateView(LoginRequiredMixin, View):
         })
 
     def post(self, request):
-        fy_id  = request.POST.get('fiscal_year')
-        po_id  = request.POST.get('provincial_office')
-        action = request.POST.get('action', 'preview')
-
-        # month=0 means "report till now" (all months that have data)
-        month_raw = request.POST.get('month', '0')
-        try:
-            month = int(month_raw)
-        except (ValueError, TypeError):
+        fy_id = request.POST.get('fiscal_year')
+        month_str = request.POST.get('month', '')
+        # Handle "Report Till Now" case (month=0) as show_all=True
+        if month_str.strip() == '0':
             month = 0
+        else:
+            month = int(month_str) if month_str.strip() else None
+        po_id = request.POST.get('provincial_office')
+        action = request.POST.get('action', 'preview')
 
         try:
             fy = FiscalYear.objects.get(pk=fy_id)
@@ -2325,118 +2691,123 @@ class ProvincialReportCreateView(LoginRequiredMixin, View):
             messages.error(request, 'Invalid fiscal year or provincial office.')
             return redirect('provincial_report_create')
 
-        MONTH_NAMES = {
-            1:'Shrawan', 2:'Bhadra', 3:'Ashwin', 4:'Kartik',
-            5:'Mangsir', 6:'Poush', 7:'Magh', 8:'Falgun',
-            9:'Chaitra', 10:'Baisakh', 11:'Jestha', 12:'Ashadh'
+        month_names = {
+            1: 'Shrawan', 2: 'Bhadra', 3: 'Ashwin', 4: 'Kartik',
+            5: 'Mangsir', 6: 'Poush', 7: 'Magh', 8: 'Falgun',
+            9: 'Chaitra', 10: 'Baisakh', 11: 'Jestha', 12: 'Ashadh'
         }
 
-        # show_all: month=0 → "till now" (all available months), else specific month
-        show_all = (month == 0)
-
-        # Determine the effective upper month limit:
-        # - show_all: up to whichever month has latest data in the FY
-        # - specific: exactly that month only
+        # Auto-determine if showing all months or specific month
+        show_all = month is None or month == 0  # If no month selected, show all available months
+        
+        # If no month selected, find the latest available month
         if show_all:
-            # Find the highest month number that has any report under this province/FY
-            latest = LossReport.objects.filter(
-                fiscal_year=fy,
+            latest_report = LossReport.objects.filter(
                 distribution_center__provincial_office=po,
-            ).order_by('-month').values_list('month', flat=True).first()
-            upto_month = latest if latest else 12
-        else:
-            upto_month = month
+                fiscal_year=fy,
+                status='APPROVED'
+            ).order_by('-month').first()
+            
+            if latest_report:
+                month = latest_report.month
+            else:
+                messages.error(request, 'No approved reports found for this provincial office and fiscal year.')
+                return redirect('provincial_report_create')
 
-        dcs = DistributionCenter.objects.filter(provincial_office=po, is_active=True)
+        # show_all=True -> cumulative Shrawan->month view; False -> selected month only
+
+        # Gather all DC reports under this provincial office for this FY/month
+        dcs = DistributionCenter.objects.filter(provincial_office=po)
         dc_report_data = []
-        grand_total_received = 0.0
-        grand_total_utilised = 0.0
+        grand_total_received = 0
+        grand_total_utilised = 0
 
         for dc in dcs:
+            # ── Month filter logic ──
+            # "all_months" mode: include Shrawan up to selected month (cumulative view)
+            # normal mode: show ONLY the selected month
             if show_all:
-                # All months with data up to the latest available month
                 dc_reports_range = LossReport.objects.filter(
                     distribution_center=dc,
                     fiscal_year=fy,
-                    month__lte=upto_month,
+                    month__lte=month
                 ).order_by('month')
             else:
-                # Exactly the selected month
                 dc_reports_range = LossReport.objects.filter(
                     distribution_center=dc,
                     fiscal_year=fy,
-                    month=month,
+                    month=month
                 ).order_by('month')
 
-            # YTD always goes from Shrawan → upto_month (for cumulative %)
+            # Month-specific report (always the selected month)
+            month_report = LossReport.objects.filter(
+                distribution_center=dc, fiscal_year=fy, month=month
+            ).first()
+
+            # For cumulative calculation always use Shrawan → selected month
             dc_reports_ytd = LossReport.objects.filter(
                 distribution_center=dc,
                 fiscal_year=fy,
-                month__lte=upto_month,
+                month__lte=month
             ).order_by('month')
 
-            # For "specific month" mode, the single month report
-            month_report = dc_reports_range.filter(month=upto_month).first() if not show_all else None
+            month_received = float(month_report.total_received_kwh) if month_report else 0
+            month_utilised = float(month_report.total_utilised_kwh) if month_report else 0
 
-            # YTD totals
+            # Cumulative = Σloss_so_far / Σreceived_so_far × 100 (same formula as dashboard)
             ytd_received = sum(float(r.total_received_kwh) for r in dc_reports_ytd)
             ytd_utilised = sum(float(r.total_utilised_kwh) for r in dc_reports_ytd)
             ytd_loss = ytd_received - ytd_utilised
-            ytd_cl   = round(ytd_loss / ytd_received * 100, 4) if ytd_received else 0
+            ytd_cl = round(ytd_loss / ytd_received * 100, 4) if ytd_received else 0
 
-            # For single-month mode: monthly IL from that month only
-            if not show_all and month_report:
-                m_recv = float(month_report.total_received_kwh)
-                m_util = float(month_report.total_utilised_kwh)
-                monthly_il = round((m_recv - m_util) / m_recv * 100, 4) if m_recv else 0
-            else:
-                # show_all: use YTD values as the "monthly_il" summary (shown in YTD col)
-                m_recv = ytd_received
-                m_util = ytd_utilised
-                monthly_il = ytd_cl  # same formula for cumulative
+            # Monthly loss % = loss of that month only / received of that month × 100
+            monthly_il = round((month_received - month_utilised) / month_received * 100, 4) if month_received else 0
 
-            # Monthly breakdown per month (for the column-per-month table)
+            # Monthly breakdown: only for displayed range
             monthly_breakdown = {}
             for r in dc_reports_range:
                 mn = r.month
-                r_recv = float(r.total_received_kwh)
-                r_util = float(r.total_utilised_kwh)
-                r_loss = r_recv - r_util
-                r_il   = round(r_loss / r_recv * 100, 4) if r_recv else 0
+                md_loss = float(r.total_received_kwh) - float(r.total_utilised_kwh)
+                md_il = round(md_loss / float(r.total_received_kwh) * 100, 4) if float(r.total_received_kwh) else 0
                 monthly_breakdown[mn] = {
-                    'received':   r_recv,
-                    'utilised':   r_util,
-                    'monthly_il': r_il,
+                    'received': float(r.total_received_kwh),
+                    'utilised': float(r.total_utilised_kwh),
+                    'monthly_il': md_il,
                 }
 
-            # Grand totals:
-            # - show_all: accumulate YTD figures across all DCs
-            # - specific: accumulate single-month figures
-            grand_total_received += ytd_received if show_all else m_recv
-            grand_total_utilised += ytd_utilised if show_all else m_util
+            # For show_all mode, use YTD cumulative totals; for specific month, use month values
+            if show_all:
+                grand_total_received += ytd_received
+                grand_total_utilised += ytd_utilised
+            else:
+                grand_total_received += month_received
+                grand_total_utilised += month_utilised
 
-            # Provincial target for the relevant month
-            target_month = upto_month
-            dc_prov_target = DCMonthlyTarget.objects.filter(
-                distribution_center=dc, fiscal_year=fy, month=target_month
+            # ── DC-specific provincial yearly target ──
+            dc_prov_target = DCYearlyTarget.objects.filter(
+                distribution_center=dc, fiscal_year=fy
             ).first()
             dc_target_pct = float(dc_prov_target.target_loss_percent) if dc_prov_target else None
 
             dc_report_data.append({
-                'dc':              dc,
-                'monthly_il':      monthly_il,
-                'ytd_received':    ytd_received,
-                'ytd_utilised':    ytd_utilised,
-                'ytd_cl':          ytd_cl,
+                'dc': dc,
+                'month_received': month_received,
+                'month_utilised': month_utilised,
+                'monthly_il': monthly_il,
+                'ytd_received': ytd_received,
+                'ytd_utilised': ytd_utilised,
+                'ytd_cl': ytd_cl,
                 'monthly_breakdown': monthly_breakdown,
-                'dc_target':       dc_target_pct,
-                'nea_target':      float(fy.loss_target_percent),
+                'report_status': month_report.status if month_report else 'NO_REPORT',
+                'dc_target': dc_target_pct,    # Provincial target for this DC this month
+                'nea_target': float(fy.loss_target_percent),  # NEA target (for reference only)
             })
 
         grand_loss = grand_total_received - grand_total_utilised
-        grand_il   = round(grand_loss / grand_total_received * 100, 4) if grand_total_received else 0
+        grand_il = round(grand_loss / grand_total_received * 100, 4) if grand_total_received else 0
 
-        if action == 'save' and not show_all:
+        if action == 'save':
+            # Save/update the provincial report record
             prov_report, created = ProvincialReport.objects.get_or_create(
                 provincial_office=po,
                 fiscal_year=fy,
@@ -2448,10 +2819,9 @@ class ProvincialReportCreateView(LoginRequiredMixin, View):
                 action='CREATE' if created else 'UPDATE',
                 model_name='ProvincialReport',
                 object_id=prov_report.pk,
-                description=(f"{'Created' if created else 'Updated'} provincial report "
-                             f"for {po.name} - {fy.year_bs} - {MONTH_NAMES.get(month,'')}"),
+                description=f"{'Created' if created else 'Updated'} provincial report for {po.name} - {fy.year_bs} - {month_names.get(month,'')}",
             )
-            messages.success(request, f'Provincial report for {MONTH_NAMES.get(month,"")} saved successfully.')
+            messages.success(request, f'Provincial report for {month_names.get(month,"")} saved successfully.')
 
         user = request.user
         if getattr(user, 'is_system_admin', False):
@@ -2460,27 +2830,25 @@ class ProvincialReportCreateView(LoginRequiredMixin, View):
             provincial_offices = ProvincialOffice.objects.filter(pk=user.provincial_office_id)
 
         context = {
-            'fiscal_years':       FiscalYear.objects.all(),
+            'fiscal_years': FiscalYear.objects.all(),
             'provincial_offices': provincial_offices,
             'months_list': [
                 (1,'Shrawan'),(2,'Bhadra'),(3,'Ashwin'),(4,'Kartik'),
                 (5,'Mangsir'),(6,'Poush'),(7,'Magh'),(8,'Falgun'),
                 (9,'Chaitra'),(10,'Baisakh'),(11,'Jestha'),(12,'Ashadh'),
             ],
-            'report_data':         dc_report_data,
-            'grand_total_received': round(grand_total_received, 2),
-            'grand_total_utilised': round(grand_total_utilised, 2),
-            'grand_il':            round(grand_il, 4),
-            'selected_fy':         fy,
-            'selected_month':      month,
-            'selected_month_name': MONTH_NAMES.get(month, '') if month else f'Till {MONTH_NAMES.get(upto_month,"")}',
-            'selected_po':         po,
-            'nea_target_pct':      float(fy.loss_target_percent),
-            'show_all':            show_all,
-            # months_range: columns to render in the table
-            'months_range':        list(range(1, upto_month + 1)) if show_all else [month],
-            'month_names':         MONTH_NAMES,
-            'upto_month':          upto_month,
+            'report_data': dc_report_data,
+            'grand_total_received': grand_total_received,
+            'grand_total_utilised': grand_total_utilised,
+            'grand_il': round(grand_il, 2),
+            'selected_fy': fy,
+            'selected_month': month,
+            'selected_month_name': month_names.get(month, ''),
+            'selected_po': po,
+            'nea_target_pct': float(fy.loss_target_percent),
+            'show_all': show_all,
+            'months_range': list(range(1, month + 1)) if show_all else [month],
+            'month_names': month_names,
         }
         return render(request, self.template_name, context)
 
@@ -2557,6 +2925,155 @@ class ProvincialDCReportsView(LoginRequiredMixin, View):
             'not_submitted_count': not_submitted_count,
         })
 
+class ProvincialReportPrintView(LoginRequiredMixin, View):
+    """Print provincial monthly report in formal format."""
+    template_name = 'nea_loss/reports/provincial_print.html'
+
+    def dispatch(self, request, *args, **kwargs):
+        user = request.user
+        if user.is_authenticated:
+            if not (getattr(user, 'is_system_admin', False) or user.is_provincial):
+                messages.error(request, 'Only provincial managers can print provincial reports.')
+                return redirect('dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request):
+        user = request.user
+        if getattr(user, 'is_system_admin', False):
+            provincial_offices = ProvincialOffice.objects.all()
+        else:
+            provincial_offices = ProvincialOffice.objects.filter(pk=user.provincial_office_id)
+
+        return render(request, self.template_name, {
+            'provincial_offices': provincial_offices,
+            'fiscal_years': FiscalYear.objects.all(),
+            'months_list': [
+                (1,'Shrawan'),(2,'Bhadra'),(3,'Ashwin'),(4,'Kartik'),
+                (5,'Mangsir'),(6,'Poush'),(7,'Magh'),(8,'Falgun'),
+                (9,'Chaitra'),(10,'Baisakh'),(11,'Jestha'),(12,'Ashadh'),
+            ],
+        })
+
+    def post(self, request):
+        fy_id = request.POST.get('fiscal_year')
+        month_str = request.POST.get('month', '')
+        po_id = request.POST.get('provincial_office')
+        
+        try:
+            fy = FiscalYear.objects.get(pk=fy_id)
+            po = ProvincialOffice.objects.get(pk=po_id)
+            # Handle "Report Till Now" case (month=0) as show_all=True
+            if month_str.strip() == '0':
+                month = 0
+            else:
+                month = int(month_str) if month_str.strip() else None
+        except Exception:
+            messages.error(request, 'Invalid fiscal year or provincial office.')
+            return redirect('provincial_report_create')
+
+        # Auto-determine if showing all months or specific month
+        show_all = month is None or month == 0  # If no month selected, show all available months
+        
+        # If no month selected, find latest available month
+        if show_all:
+            latest_report = LossReport.objects.filter(
+                distribution_center__provincial_office=po,
+                fiscal_year=fy,
+                status='APPROVED'
+            ).order_by('-month').first()
+            
+            if latest_report:
+                month = latest_report.month
+            else:
+                messages.error(request, 'No approved reports found for this provincial office and fiscal year.')
+                return redirect('provincial_report_create')
+
+        # Get all distribution centers under this provincial office
+        distribution_centers = DistributionCenter.objects.filter(provincial_office=po)
+        
+        # Prepare monthly data for each DC
+        months_range = list(range(1, month + 1)) if show_all else [month]
+        months_list = [
+            (1,'Shrawan'),(2,'Bhadra'),(3,'Ashwin'),(4,'Kartik'),
+            (5,'Mangsir'),(6,'Poush'),(7,'Magh'),(8,'Falgun'),
+            (9,'Chaitra'),(10,'Baisakh'),(11,'Jestha'),(12,'Ashadh'),
+        ]
+        
+        # Build monthly data structure for each DC
+        dc_monthly_data = []
+        for dc in distribution_centers:
+            dc_data = []
+            for m in months_range:
+                month_name = dict(months_list).get(m, '')
+                
+                # Get meter points data
+                import_meter_points = dc.meter_points.filter(
+                    source_type__in=["SUBSTATION","FEEDER_11KV","FEEDER_33KV","INTERBRANCH","IPP","ENERGY_IMPORT"]
+                )
+                export_meter_points = dc.meter_points.filter(
+                    source_type__in=["EXPORT_DC","EXPORT_IPP","ENERGY_EXPORT"]
+                )
+                consumer_categories = dc.consumer_categories.all()
+                
+                # Calculate totals
+                total_energy_import = 0
+                total_energy_export = 0
+                total_energy_utilised = 0
+                total_loss = 0
+                
+                # Get monthly report if exists
+                monthly_report = LossReport.objects.filter(
+                    distribution_center=dc, fiscal_year=fy, month=m
+                ).first()
+                
+                if monthly_report:
+                    total_energy_import = float(monthly_report.total_energy_import or 0)
+                    total_energy_export = float(monthly_report.total_energy_export or 0)
+                    total_energy_utilised = float(monthly_report.total_utilised_kwh or 0)
+                    total_loss = float(monthly_report.total_loss_kwh or 0)
+                
+                dc_data.append({
+                    'month_num': m,
+                    'month_name': month_name,
+                    'total_energy_import': total_energy_import,
+                    'total_energy_export': total_energy_export,
+                    'net_energy_received': total_energy_import - total_energy_export,
+                    'total_energy_utilised': total_energy_utilised,
+                    'loss_unit': total_loss,
+                    'monthly_loss_percent': round((total_loss / (total_energy_import - total_energy_export)) * 100, 4) if (total_energy_import - total_energy_export) > 0 else 0,
+                    'cumulative_loss_percent': 0,  # Would need cumulative calculation
+                    'dc_count': 1,
+                    'submitted_count': 1 if monthly_report else 0,
+                    'not_submitted_count': 0 if monthly_report else 1,
+                })
+            
+            dc_monthly_data.append({
+                'dc': dc,
+                'months': dc_data,
+                'total_received_kwh': sum(data['net_energy_received'] for data in dc_data),
+                'total_utilised_kwh': sum(data['total_energy_utilised'] for Data in dc_data),
+                'total_loss_kwh': sum(data['loss_unit'] for Data in dc_data),
+                'cumulative_loss_percent': 0,  # Would need proper calculation
+                'overall_loss_percent': 0,  # Would need proper calculation
+            })
+        
+        # Calculate provincial totals
+        total_dcs = len(distribution_centers)
+        total_submitted = sum(1 for dc_data in dc_monthly_data for month_data in dc_data['months'] if month_data.get('submitted_count', 0))
+        total_not_submitted = total_dcs - total_submitted
+
+        return render(request, self.template_name, {
+            'provincial_office': po,
+            'selected_fy': fy,
+            'selected_month': month,
+            'selected_month_name': dict(months_list).get(month, ''),
+            'distribution_centers': dc_monthly_data,
+            'months': months_range,
+            'total_dcs': total_dcs,
+            'total_submitted': total_submitted,
+            'total_not_submitted': total_not_submitted,
+        })
+
 class ProvincialReportListView(LoginRequiredMixin, View):
     """List of saved provincial reports."""
     template_name = 'nea_loss/reports/provincial_list.html'
@@ -2571,6 +3088,29 @@ class ProvincialReportListView(LoginRequiredMixin, View):
             reports = ProvincialReport.objects.none()
         return render(request, self.template_name, {
             'reports': reports,
+            'fiscal_years': FiscalYear.objects.all(),
+        })
+
+class ProvincialReportDetailView(LoginRequiredMixin, View):
+    """View saved provincial report details."""
+    template_name = 'nea_loss/reports/provincial_detail.html'
+
+    def get(self, request, pk):
+        user = request.user
+        if not (getattr(user, 'is_system_admin', False) or user.is_provincial):
+            messages.error(request, 'Only provincial users can view provincial reports.')
+            return redirect('dashboard')
+        
+        try:
+            report = ProvincialReport.objects.select_related(
+                'provincial_office', 'fiscal_year', 'created_by'
+            ).get(pk=pk)
+        except ProvincialReport.DoesNotExist:
+            messages.error(request, 'Provincial report not found.')
+            return redirect('provincial_report_list')
+        
+        return render(request, self.template_name, {
+            'report': report,
             'fiscal_years': FiscalYear.objects.all(),
         })
 
@@ -2648,12 +3188,13 @@ def _generate_excel_report(report):
         cell.fill = PatternFill('solid', start_color='EBF5FB')
         cell.alignment = Alignment(horizontal='center')
     row += 1
-    prov_targets = {t.month: float(t.target_loss_percent) for t in DCMonthlyTarget.objects.filter(
+    prov_targets = DCYearlyTarget.objects.filter(
         distribution_center=report.distribution_center, fiscal_year=report.fiscal_year
-    )}
+    ).first()
+    prov_target_pct = float(prov_targets.target_loss_percent) if prov_targets else None
     ws.cell(row=row, column=1, value='Target (%)').font = Font(name='Arial', bold=True, size=9)
     for mi, md in enumerate(months):
-        val = prov_targets.get(md.month, '—')
+        val = prov_target_pct if prov_target_pct else '—'
         cell = ws.cell(row=row, column=2 + mi, value=val)
         cell.font = Font(name='Arial', size=9)
         cell.alignment = Alignment(horizontal='center')
