@@ -883,14 +883,15 @@ class ReportCreateView(LoginRequiredMixin, View):
             
             # Check if this month needs an override or can be created normally
             if month_num > 1:
-                # Check if there's an approved override for this month
+                # Check if there's an approved and active override for this month
                 has_override = False
                 for dc in dcs:
                     override = DCReportOverride.objects.filter(
                         distribution_center=dc,
                         fiscal_year=active_fy,
                         status='APPROVED',
-                        resume_month=month_num
+                        resume_month=month_num,
+                        is_active=True
                     ).first()
                     if override:
                         has_override = True
