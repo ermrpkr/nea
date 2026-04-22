@@ -71,4 +71,8 @@ urlpatterns = [
     path('api/meter-points/disable-month/', views.api_disable_meter_point_for_month, name='api_disable_meter_point_for_month'),
     path('api/consumer-data/save/', views.api_save_consumer_data, name='api_save_consumer'),
     path('api/recalculate/<int:report_pk>/', views.api_recalculate, name='api_recalculate'),
+
+    # DC Report Override Management
+    path('overrides/request/', views.OverrideRequestView.as_view(), name='override_request'),
+    path('overrides/manage/', views.OverrideManagementView.as_view(), name='override_manage'),
 ]

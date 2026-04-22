@@ -18,19 +18,41 @@ ALLOWED_HOSTS = config(
     cast=Csv()
 )
 
+# CSRF trusted origins for browser preview
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+    'http://127.0.0.1:64824',
+    'http://127.0.0.1:*',
+]
+
+# Disable CSRF cookie security for development
+CSRF_COOKIE_SECURE = False
+CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_SAMESITE = 'Lax'
+
 # ── Database (Good for Railway) ──────────────────────────────────────────────
-# Database (Good for Railway)
-if os.environ.get('DATABASE_URL'):
-    # Use PostgreSQL for Railway
-    DATABASES = {
-        'default': dj_database_url.config(
-            default=os.environ.get('DATABASE_URL'),
-            conn_max_age=600,
-            conn_health_checks=True,
-        )
-    }
-else:
-    # Fallback to SQLite for local development
+try:
+    # Database (Good for Railway)
+    if os.environ.get('DATABASE_URL'):
+        # Use PostgreSQL for Railway
+        DATABASES = {
+            'default': dj_database_url.config(
+                default=os.environ.get('DATABASE_URL'),
+                conn_max_age=600,
+                conn_health_checks=True,
+            )
+        }
+    else:
+        # Fallback to SQLite for local development
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.sqlite3',
+                'NAME': BASE_DIR / 'db.sqlite3',
+            }
+        }
+except:
+    # Fallback to SQLite for local development in case of any error
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',

@@ -540,6 +540,66 @@ class Message(models.Model):
         return f"From {self.sender} to {self.recipient}: {self.subject}"
 
 
+class DCReportOverride(models.Model):
+    """Admin-approved override to allow DC to skip missing months due to technical issues"""
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('APPROVED', 'Approved'),
+        ('REJECTED', 'Rejected'),
+    ]
+    
+    distribution_center = models.ForeignKey(DistributionCenter, on_delete=models.CASCADE, related_name='report_overrides')
+    fiscal_year = models.ForeignKey(FiscalYear, on_delete=models.CASCADE, related_name='report_overrides')
+    requested_by = models.ForeignKey(NEAUser, on_delete=models.CASCADE, related_name='requested_overrides')
+    approved_by = models.ForeignKey(NEAUser, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_overrides')
+    
+    # Month from which DC wants to resume reporting (e.g., Kartik=4)
+    resume_month = models.PositiveSmallIntegerField(choices=NEPALI_MONTH_CHOICES)
+    
+    # Range of months to skip (e.g., 3-6 means skip Ashwin, Kartik, Mangsir, Poush)
+    skip_from_month = models.PositiveSmallIntegerField(choices=NEPALI_MONTH_CHOICES, null=True, blank=True)
+    skip_to_month = models.PositiveSmallIntegerField(choices=NEPALI_MONTH_CHOICES, null=True, blank=True)
+    
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    reason = models.TextField(help_text='Reason for override request (e.g., technical problems, system downtime)')
+    admin_notes = models.TextField(blank=True, help_text='Admin notes on approval/rejection')
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.distribution_center.name} - {self.fiscal_year.year_bs} - Resume {self.get_resume_month_display()} ({self.status})"
+
+    def get_resume_month_display(self):
+        month_names = {
+            1: 'Shrawan', 2: 'Bhadra', 3: 'Ashwin', 4: 'Kartik',
+            5: 'Mangsir', 6: 'Poush', 7: 'Magh', 8: 'Falgun',
+            9: 'Chaitra', 10: 'Baisakh', 11: 'Jestha', 12: 'Ashadh'
+        }
+        return month_names.get(self.resume_month, '')
+
+    def approve(self, approved_by, admin_notes=''):
+        """Approve the override request"""
+        self.status = 'APPROVED'
+        self.approved_by = approved_by
+        self.admin_notes = admin_notes
+        self.approved_at = timezone.now()
+        self.save()
+
+    def reject(self, approved_by, admin_notes=''):
+        """Reject the override request"""
+        self.status = 'REJECTED'
+        self.approved_by = approved_by
+        self.admin_notes = admin_notes
+        self.approved_at = timezone.now()
+        self.save()
+
+    class Meta:
+        unique_together = ['distribution_center', 'fiscal_year', 'resume_month']
+        ordering = ['-created_at']
+
+
 class Notification(models.Model):
     TYPE_CHOICES = [
         ('REPORT_SUBMITTED', 'Report Submitted'),
@@ -547,6 +607,9 @@ class Notification(models.Model):
         ('REPORT_REJECTED', 'Report Rejected'),
         ('LOSS_EXCEEDED', 'Loss Target Exceeded'),
         ('REMINDER', 'Submission Reminder'),
+        ('OVERRIDE_REQUESTED', 'Override Requested'),
+        ('OVERRIDE_APPROVED', 'Override Approved'),
+        ('OVERRIDE_REJECTED', 'Override Rejected'),
     ]
 
     recipient = models.ForeignKey(NEAUser, on_delete=models.CASCADE, related_name='notifications')

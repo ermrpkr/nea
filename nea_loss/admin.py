@@ -16,7 +16,7 @@ from .models import (
     FiscalYear, LossReport, MonthlyLossData, MeterPoint, MeterReading,
     ConsumerCategory, EnergyUtilisation, ConsumerCount,
     AuditLog, Notification, ProvincialReport, DCMonthlyTarget, DCYearlyTarget,
-    MonthlyMeterPointStatus,
+    MonthlyMeterPointStatus, DCReportOverride,
 )
 
 # ── Site branding ──────────────────────────────────────────────────────────────
@@ -660,3 +660,84 @@ class NotificationAdmin(admin.ModelAdmin):
     @admin.action(description='Mark selected as Unread')
     def mark_unread(self, request, queryset):
         queryset.update(is_read=False)
+
+
+# ==================== DC REPORT OVERRIDE ====================
+
+@admin.register(DCReportOverride)
+class DCReportOverrideAdmin(admin.ModelAdmin):
+    list_display = ['distribution_center', 'fiscal_year', 'resume_month_display', 
+                   'status_badge', 'requested_by', 'approved_by', 'created_at']
+    list_filter = ['status', 'fiscal_year', 'distribution_center__provincial_office']
+    search_fields = ['distribution_center__name', 'reason', 'admin_notes']
+    readonly_fields = ['created_at', 'updated_at', 'requested_by', 'approved_by', 'approved_at']
+    actions = ['approve_overrides', 'reject_overrides']
+    
+    fieldsets = (
+        ('Override Request', {
+            'fields': ('distribution_center', 'fiscal_year', 'resume_month', 
+                      'skip_from_month', 'skip_to_month', 'reason'),
+            'description': (
+                '<div style="background:#FEF9E7;padding:12px 16px;border-radius:8px;'
+                'font-size:12px;border-left:4px solid #F39C12;margin-bottom:12px;">' 
+                '<strong>Override Purpose:</strong> Allow DC to resume reporting from a specific month '
+                'after technical issues or system downtime. Previous approved reports remain unchanged.<br><br>'
+                '<strong>Resume Month:</strong> Month from which DC can create new reports.<br>'
+                '<strong>Skip Range:</strong> Optional range of months to be skipped (e.g., Ashwin-Poush).'
+                '</div>'
+            ),
+        }),
+        ('Approval Information', {
+            'fields': ('status', 'approved_by', 'admin_notes'),
+        }),
+        ('Metadata', {
+            'fields': ('requested_by', 'created_at', 'updated_at', 'approved_at'),
+            'classes': ('collapse',)
+        })
+    )
+    
+    def save_model(self, request, obj, form, change):
+        if not change:
+            obj.requested_by = request.user
+        super().save_model(request, obj, form, change)
+    
+    @admin.display(description='Resume Month')
+    def resume_month_display(self, obj):
+        return obj.get_resume_month_display()
+    
+    @admin.display(description='Status')
+    def status_badge(self, obj):
+        colors = {'PENDING': 'yellow', 'APPROVED': 'green', 'REJECTED': 'red'}
+        return badge(obj.get_status_display(), colors.get(obj.status, 'grey'))
+    
+    @admin.action(description='Approve selected overrides')
+    def approve_overrides(self, request, queryset):
+        count = 0
+        for override in queryset.filter(status='PENDING'):
+            override.approve(approved_by=request.user, admin_notes='Approved via bulk action')
+            count += 1
+            # Create notification for DC user
+            Notification.objects.create(
+                recipient=override.requested_by,
+                notification_type='OVERRIDE_APPROVED',
+                title=f'Override Approved for {override.distribution_center.name}',
+                message=f'Your request to resume reporting from {override.get_resume_month_display()} has been approved.',
+                related_report=None
+            )
+        self.message_user(request, f'{count} override(s) approved.')
+    
+    @admin.action(description='Reject selected overrides')
+    def reject_overrides(self, request, queryset):
+        count = 0
+        for override in queryset.filter(status='PENDING'):
+            override.reject(approved_by=request.user, admin_notes='Rejected via bulk action')
+            count += 1
+            # Create notification for DC user
+            Notification.objects.create(
+                recipient=override.requested_by,
+                notification_type='OVERRIDE_REJECTED',
+                title=f'Override Rejected for {override.distribution_center.name}',
+                message=f'Your request to resume reporting from {override.get_resume_month_display()} has been rejected.',
+                related_report=None
+            )
+        self.message_user(request, f'{count} override(s) rejected.')

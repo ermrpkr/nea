@@ -40,15 +40,45 @@
         </div>
         <div class="form-group">
           <label class="form-label">Month <span style="color:var(--nea-red);">*</span></label>
-          <select name="month" class="form-control" required>
-            <option value="">— Select Month —</option>
-            {% for m_num, m_name in months_list %}
-            <option value="{{ m_num }}">{{ m_name }}</option>
+          {% if months_with_status %}
+          <select name="month" class="form-control" required id="monthSelect">
+            <option value="">-- Select Month --</option>
+            {% for month in months_with_status %}
+            <option value="{{ month.month_num }}" 
+                    data-status="{{ month.status }}"
+                    data-message="{{ month.message }}"
+                    {% if not month.can_create %}disabled{% endif %}>
+              {{ month.month_name }}
+              {% if month.status == 'exists' %}({{ month.message }}){% endif %}
+              {% if month.has_override %} (Override){% endif %}
+            </option>
             {% endfor %}
           </select>
+          
+          <!-- Status message display -->
+          <div id="monthStatus" class="mt-2" style="display: none;">
+            <small class="form-text text-muted" id="monthStatusText"></small>
+          </div>
+          
+          <!-- Override guidance for months that need override -->
+          <div id="overrideGuidance" class="mt-2" style="display: none;">
+            <div class="alert alert-warning py-2">
+              <i class="fas fa-exclamation-triangle"></i> 
+              <span id="overrideMessage"></span>
+              {% if user.is_dc_level %}
+              <a href="{% url 'override_request' %}" class="ms-2" style="color:var(--nea-blue-mid); font-weight:600;">Request Override</a>
+              {% endif %}
+            </div>
+          </div>
+          {% else %}
+          <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle"></i> <strong>No months available for reporting</strong><br>
+            Previous month reports may be missing or not approved. If you experienced technical issues or system downtime, you can <a href="{% url 'override_request' %}" style="color:var(--nea-blue-mid); font-weight:600;">request an override</a> to resume reporting.
+          </div>
+          {% endif %}
         </div>
         <div style="display:flex; gap:12px; margin-top:24px;">
-          <button type="submit" class="btn btn-primary">
+          <button type="submit" class="btn btn-primary" id="createReportBtn">
             <i class="fas fa-check"></i> Create Report
           </button>
           <a href="{% url 'report_list' %}" class="btn btn-outline">Cancel</a>
@@ -57,4 +87,74 @@
     </div>
   </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const monthSelect = document.getElementById('monthSelect');
+    const monthStatus = document.getElementById('monthStatus');
+    const monthStatusText = document.getElementById('monthStatusText');
+    const overrideGuidance = document.getElementById('overrideGuidance');
+    const overrideMessage = document.getElementById('overrideMessage');
+    const createReportBtn = document.getElementById('createReportBtn');
+    
+    function updateSubmitButton(canCreate) {
+        if (createReportBtn) {
+            createReportBtn.disabled = !canCreate;
+            if (!canCreate) {
+                createReportBtn.title = 'Select a valid month to create report';
+            } else {
+                createReportBtn.title = '';
+            }
+        }
+    }
+    
+    if (monthSelect) {
+        monthSelect.addEventListener('change', function() {
+            const selectedOption = monthSelect.options[monthSelect.selectedIndex];
+            const status = selectedOption.getAttribute('data-status');
+            const message = selectedOption.getAttribute('data-message');
+            const isDisabled = selectedOption.disabled;
+            
+            // Reset displays
+            monthStatus.style.display = 'none';
+            overrideGuidance.style.display = 'none';
+            
+            // Update submit button
+            updateSubmitButton(!isDisabled && monthSelect.value !== '');
+            
+            if (status && message) {
+                if (status === 'needs_override') {
+                    // Show override guidance
+                    overrideMessage.textContent = message + '. ';
+                    overrideGuidance.style.display = 'block';
+                } else if (status === 'override_approved') {
+                    // Show override approved message
+                    monthStatusText.textContent = message;
+                    monthStatus.style.display = 'block';
+                    monthStatusText.className = 'form-text text-success';
+                } else if (status === 'available') {
+                    // Show available message
+                    monthStatusText.textContent = message;
+                    monthStatus.style.display = 'block';
+                    monthStatusText.className = 'form-text text-success';
+                } else if (status === 'exists') {
+                    // Show exists message
+                    monthStatusText.textContent = message;
+                    monthStatus.style.display = 'block';
+                    monthStatusText.className = 'form-text text-info';
+                }
+            }
+        });
+        
+        // Initial state
+        updateSubmitButton(false);
+        
+        // Trigger change event on page load if there's a selected option
+        if (monthSelect.value) {
+            monthSelect.dispatchEvent(new Event('change'));
+        }
+    }
+});
+</script>
+
 {% endblock %}

@@ -27,6 +27,7 @@ from .models import (
     ConsumerCategory, EnergyUtilisation, ConsumerCount, FiscalYear,
     DistributionCenter, ProvincialOffice, Province, Notification, AuditLog,
     ProvincialReport, MonthlyMeterPointStatus, DCYearlyTarget, Message,
+    DCReportOverride,
 )
 
 
@@ -132,6 +133,10 @@ class DashboardView(LoginRequiredMixin, View):
         total_loss = total_received - total_utilised
         overall_loss_pct = (total_loss / total_received * 100) if total_received > 0 else 0
 
+        # Override management data for admin
+        pending_overrides = DCReportOverride.objects.filter(status='PENDING').order_by('-created_at')
+        recent_overrides = DCReportOverride.objects.all().order_by('-created_at')[:10]
+
         # Ensure all required context variables are properly initialized
         admin_context = {
             'admin_total_users': NEAUser.objects.count(),
@@ -139,6 +144,8 @@ class DashboardView(LoginRequiredMixin, View):
             'admin_recent_audits': AuditLog.objects.select_related('user').order_by('-timestamp')[:12],
             'admin_quicklink_active_fy': active_fy.year_bs if active_fy else '',
             'admin_overall_loss_pct': round(overall_loss_pct, 2),
+            'admin_pending_overrides': pending_overrides,
+            'admin_recent_overrides': recent_overrides,
             'mgmtProvData': base.get('mgmtProvData', []),  # Use empty list for admin
             'prov_monthly_detail': base.get('prov_monthly_detail', {}),
             'monthly_trend': base.get('monthly_trend', []),
@@ -827,31 +834,40 @@ class ReportCreateView(LoginRequiredMixin, View):
             )
             return redirect('report_list')
 
-        # Calculate available months based on existing reports and approval status
+        # Show all months from start month onwards with status indicators
         all_months = [
             (1,'Shrawan'),(2,'Bhadra'),(3,'Ashwin'),(4,'Kartik'),
             (5,'Mangsir'),(6,'Poush'),(7,'Magh'),(8,'Falgun'),
             (9,'Chaitra'),(10,'Baisakh'),(11,'Jestha'),(12,'Ashadh'),
         ]
         
-        # Filter months to only show available options
-        available_months = []
+        # Build month list with status information
+        months_with_status = []
         active_fy = FiscalYear.objects.filter(is_active=True).first()
         
         for month_num, month_name in all_months:
-            # Check if this month can be created
-            can_create = True
+            month_info = {
+                'month_num': month_num,
+                'month_name': month_name,
+                'can_create': False,
+                'exists': False,
+                'needs_override': False,
+                'has_override': False,
+                'status': '',
+                'message': ''
+            }
             
-            # First check: Only show months from start month onwards
+            # Skip months before the DC's start month
             if active_fy and dcs.exists():
                 dc_start_month = dcs.first().report_start_month
                 if month_num < dc_start_month:
-                    # Skip months before the start month entirely
-                    can_create = False
+                    month_info['status'] = 'before_start'
+                    month_info['message'] = f'Before start month ({dc_start_month})'
+                    months_with_status.append(month_info)
                     continue
             
             # Check if report already exists for this month
-            if active_fy and can_create:
+            if active_fy:
                 existing_report = LossReport.objects.filter(
                     distribution_center__in=dcs,
                     fiscal_year=active_fy,
@@ -859,20 +875,34 @@ class ReportCreateView(LoginRequiredMixin, View):
                 ).first()
                 
                 if existing_report:
-                    can_create = False
+                    month_info['exists'] = True
+                    month_info['status'] = 'exists'
+                    month_info['message'] = f'Report exists ({existing_report.get_status_display()})'
+                    months_with_status.append(month_info)
+                    continue
             
-            # For months other than Shrawan, check if previous month is approved
-            # But skip this check for months before the DC's start month
-            if month_num > 1 and can_create:
-                # For each DC, check if this month is before its start month
-                # If it's before any DC's start month, skip the previous month check
-                skip_previous_check = False
+            # Check if this month needs an override or can be created normally
+            if month_num > 1:
+                # Check if there's an approved override for this month
+                has_override = False
                 for dc in dcs:
-                    if month_num < dc.report_start_month:
-                        skip_previous_check = True
+                    override = DCReportOverride.objects.filter(
+                        distribution_center=dc,
+                        fiscal_year=active_fy,
+                        status='APPROVED',
+                        resume_month=month_num
+                    ).first()
+                    if override:
+                        has_override = True
                         break
                 
-                if not skip_previous_check:
+                if has_override:
+                    month_info['can_create'] = True
+                    month_info['has_override'] = True
+                    month_info['status'] = 'override_approved'
+                    month_info['message'] = 'Available (override approved)'
+                else:
+                    # Check if previous month is approved
                     previous_month = month_num - 1
                     previous_report = LossReport.objects.filter(
                         distribution_center__in=dcs,
@@ -881,13 +911,25 @@ class ReportCreateView(LoginRequiredMixin, View):
                         status='APPROVED'
                     ).first()
                     
-                    if not previous_report:
-                        can_create = False
+                    if previous_report or month_num == dc_start_month:
+                        # Previous month is approved or this is start month - can create
+                        month_info['can_create'] = True
+                        month_info['status'] = 'available'
+                        month_info['message'] = 'Available'
+                    else:
+                        # Previous month not approved - needs override
+                        month_info['needs_override'] = True
+                        month_info['status'] = 'needs_override'
+                        month_info['message'] = 'Needs override (previous month not approved)'
+            else:
+                # Shrawan (month 1) - always available from start month
+                month_info['can_create'] = True
+                month_info['status'] = 'available'
+                month_info['message'] = 'Available (first month)'
             
-            if can_create:
-                available_months.append((month_num, month_name))
+            months_with_status.append(month_info)
         
-        months_list = available_months
+        months_list = [(m['month_num'], m['month_name']) for m in months_with_status]
         
         # Debug output
         print(f"DEBUG: Available months for {dcs.count()} DC(s): {months_list}")
@@ -898,11 +940,14 @@ class ReportCreateView(LoginRequiredMixin, View):
         print(f"DEBUG: Active Fiscal Year: {active_fy.year_bs if active_fy else 'None'}")
         print(f"DEBUG: Available months list: {months_list}")
         print(f"DEBUG: All months list: {all_months}")
+        print(f"DEBUG: Months with status count: {len(months_with_status)}")
+        print(f"DEBUG: Months with status: {months_with_status}")
         
         return render(request, self.template_name, {
             'fiscal_years': FiscalYear.objects.all(),
             'distribution_centers': dcs,
             'months_list': months_list,
+            'months_with_status': months_with_status,
         })
 
     def post(self, request):
@@ -941,24 +986,44 @@ class ReportCreateView(LoginRequiredMixin, View):
             # If this month is >= the DC's start month, check previous month approval
             if month >= dc.report_start_month:
                 previous_month = month - 1
-                try:
-                    previous_report = LossReport.objects.get(
-                        distribution_center=dc,
-                        fiscal_year=fy,
-                        month=previous_month
+                
+                # Check if there's an approved override for this situation
+                approved_override = DCReportOverride.objects.filter(
+                    distribution_center=dc,
+                    fiscal_year=fy,
+                    status='APPROVED',
+                    resume_month=month
+                ).first()
+                
+                if approved_override:
+                    # Override exists - allow creation with a notification
+                    messages.info(
+                        request,
+                        f'Using approved override to create {month_names.get(month, "")} report. '
+                        f'Previous months may be skipped due to: {approved_override.reason[:100]}...'
                     )
-                    if previous_report.status != 'APPROVED':
+                else:
+                    # No override - check previous month approval normally
+                    try:
+                        previous_report = LossReport.objects.get(
+                            distribution_center=dc,
+                            fiscal_year=fy,
+                            month=previous_month
+                        )
+                        if previous_report.status != 'APPROVED':
+                            messages.error(
+                                request,
+                                f'Previous month report ({month_names.get(previous_month, "")}) must be approved before creating {month_names.get(month, "")} report. '
+                                f'If you experienced technical issues, please contact your system administrator for an override.'
+                            )
+                            return self.get(request)
+                    except LossReport.DoesNotExist:
                         messages.error(
                             request,
-                            f'Previous month report ({month_names.get(previous_month, "")}) must be approved before creating {month_names.get(month, "")} report.'
+                            f'Previous month report ({month_names.get(previous_month, "")}) doesn\'t exist. Please create that first. '
+                            f'If you experienced technical issues preventing previous submissions, contact your system administrator.'
                         )
                         return self.get(request)
-                except LossReport.DoesNotExist:
-                    messages.error(
-                        request,
-                        f'Previous month report ({month_names.get(previous_month, "")}) doesn\'t exist. Please create that first.'
-                    )
-                    return self.get(request)
             # If month < start month, skip previous month check completely
 
         allowed = DistributionCenter.objects.all()
@@ -3579,3 +3644,214 @@ def _generate_excel_report(report):
 
     row = table_row + 1
     return wb
+
+
+# ==================== DC REPORT OVERRIDE VIEWS ====================
+
+class OverrideRequestView(LoginRequiredMixin, View):
+    """DC users can request overrides for missing months"""
+    template_name = 'nea_loss/overrides/request.html'
+
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_dc_level:
+            messages.error(request, 'Only DC users can request overrides.')
+            return redirect('dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request):
+        user = request.user
+        dc = user.distribution_center
+        active_fy = FiscalYear.objects.filter(is_active=True).first()
+        
+        if not dc or not active_fy:
+            messages.error(request, 'No distribution center or active fiscal year found.')
+            return redirect('dashboard')
+
+        # Find months that need overrides (missing previous months)
+        month_names = {
+            1: 'Shrawan', 2: 'Bhadra', 3: 'Ashwin', 4: 'Kartik',
+            5: 'Mangsir', 6: 'Poush', 7: 'Magh', 8: 'Falgun',
+            9: 'Chaitra', 10: 'Baisakh', 11: 'Jestha', 12: 'Ashadh'
+        }
+
+        # Get existing reports for this DC and fiscal year
+        existing_reports = LossReport.objects.filter(
+            distribution_center=dc,
+            fiscal_year=active_fy
+        ).order_by('month')
+
+        # Get existing overrides
+        existing_overrides = DCReportOverride.objects.filter(
+            distribution_center=dc,
+            fiscal_year=active_fy
+        ).order_by('-created_at')
+
+        # Show all months from start month onwards for override requests
+        available_months = []
+        approved_months = [r.month for r in existing_reports.filter(status='APPROVED')]
+        existing_report_months = [r.month for r in existing_reports]
+        
+        print(f"DEBUG: DC start month: {dc.report_start_month}")
+        print(f"DEBUG: Existing report months: {existing_report_months}")
+        print(f"DEBUG: Approved months: {approved_months}")
+        
+        for month_num in range(dc.report_start_month, 13):  # From start month to end
+            # Only show months that don't have existing reports
+            if month_num not in existing_report_months:
+                available_months.append((month_num, month_names[month_num]))
+                print(f"DEBUG: Added month {month_num} ({month_names[month_num]}) to available months")
+            else:
+                print(f"DEBUG: Skipped month {month_num} ({month_names[month_num]}) - report exists")
+        
+        print(f"DEBUG: Total available months: {len(available_months)}")
+        print(f"DEBUG: Available months list: {available_months}")
+
+        return render(request, self.template_name, {
+            'distribution_center': dc,
+            'fiscal_year': active_fy,
+            'missing_months': available_months,
+            'existing_overrides': existing_overrides,
+            'month_names': month_names,
+        })
+
+    def post(self, request):
+        user = request.user
+        dc = user.distribution_center
+        active_fy = FiscalYear.objects.filter(is_active=True).first()
+
+        resume_month = int(request.POST.get('resume_month'))
+        reason = request.POST.get('reason', '').strip()
+        skip_from = request.POST.get('skip_from_month')
+        skip_to = request.POST.get('skip_to_month')
+
+        if not reason:
+            messages.error(request, 'Please provide a reason for the override request.')
+            return self.get(request)
+
+        # Check if override already exists
+        existing = DCReportOverride.objects.filter(
+            distribution_center=dc,
+            fiscal_year=active_fy,
+            resume_month=resume_month
+        ).first()
+
+        if existing:
+            if existing.status == 'PENDING':
+                messages.error(request, 'You already have a pending request for this month.')
+                return self.get(request)
+            elif existing.status == 'APPROVED':
+                messages.info(request, 'An override for this month has already been approved.')
+                return self.get(request)
+
+        # Create new override request
+        override = DCReportOverride.objects.create(
+            distribution_center=dc,
+            fiscal_year=active_fy,
+            resume_month=resume_month,
+            reason=reason,
+            requested_by=user
+        )
+
+        if skip_from and skip_to:
+            override.skip_from_month = int(skip_from)
+            override.skip_to_month = int(skip_to)
+            override.save()
+
+        # Notify system admins
+        admin_users = NEAUser.objects.filter(role='SYS_ADMIN', is_active=True)
+        for admin in admin_users:
+            Notification.objects.create(
+                recipient=admin,
+                notification_type='OVERRIDE_REQUESTED',
+                title=f'Override Request: {dc.name}',
+                message=f'{user.full_name} requests override for {override.get_resume_month_display()}. Reason: {reason[:100]}...',
+                related_report=None
+            )
+
+        # Create audit log
+        AuditLog.objects.create(
+            user=user,
+            action='CREATE',
+            model_name='DCReportOverride',
+            object_id=override.pk,
+            description=f"Requested override for {dc.name} - {active_fy.year_bs} - {override.get_resume_month_display()}"
+        )
+
+        messages.success(request, 'Override request submitted. System administrators will review your request.')
+        return redirect('override_request')
+
+
+class OverrideManagementView(LoginRequiredMixin, View):
+    """System admin view to manage override requests"""
+    template_name = 'nea_loss/overrides/manage.html'
+
+    def dispatch(self, request, *args, **kwargs):
+        if not getattr(request.user, 'is_system_admin', False):
+            messages.error(request, 'Only system administrators can manage overrides.')
+            return redirect('dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request):
+        pending_overrides = DCReportOverride.objects.filter(status='PENDING').order_by('-created_at')
+        all_overrides = DCReportOverride.objects.all().order_by('-created_at')
+
+        return render(request, self.template_name, {
+            'pending_overrides': pending_overrides,
+            'all_overrides': all_overrides,
+        })
+
+    def post(self, request):
+        override_id = request.POST.get('override_id')
+        action = request.POST.get('action')  # 'approve' or 'reject'
+        admin_notes = request.POST.get('admin_notes', '').strip()
+
+        if not override_id or action not in ['approve', 'reject']:
+            messages.error(request, 'Invalid request.')
+            return self.get(request)
+
+        try:
+            override = DCReportOverride.objects.get(pk=override_id)
+            
+            if action == 'approve':
+                override.approve(approved_by=request.user, admin_notes=admin_notes)
+                messages.success(request, f'Override approved for {override.distribution_center.name}.')
+                
+                # Notify the requesting user
+                Notification.objects.create(
+                    recipient=override.requested_by,
+                    notification_type='OVERRIDE_APPROVED',
+                    title=f'Override Approved for {override.distribution_center.name}',
+                    message=f'Your request to resume reporting from {override.get_resume_month_display()} has been approved.',
+                    related_report=None
+                )
+                
+                audit_action = 'APPROVE'
+                
+            else:  # reject
+                override.reject(approved_by=request.user, admin_notes=admin_notes)
+                messages.success(request, f'Override rejected for {override.distribution_center.name}.')
+                
+                # Notify the requesting user
+                Notification.objects.create(
+                    recipient=override.requested_by,
+                    notification_type='OVERRIDE_REJECTED',
+                    title=f'Override Rejected for {override.distribution_center.name}',
+                    message=f'Your request to resume reporting from {override.get_resume_month_display()} has been rejected.',
+                    related_report=None
+                )
+                
+                audit_action = 'REJECT'
+
+            # Create audit log
+            AuditLog.objects.create(
+                user=request.user,
+                action=audit_action,
+                model_name='DCReportOverride',
+                object_id=override.pk,
+                description=f"{audit_action} override for {override.distribution_center.name} - {override.fiscal_year.year_bs}"
+            )
+
+        except DCReportOverride.DoesNotExist:
+            messages.error(request, 'Override not found.')
+
+        return self.get(request)

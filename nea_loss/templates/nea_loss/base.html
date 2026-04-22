@@ -366,6 +366,9 @@
       <a href="{% url 'provincial_report_create' %}" class="nav-item">
         <i class="fas fa-magic"></i> Create Prov. Report
       </a>
+      <a href="{% url 'override_manage' %}" class="nav-item {% if request.resolver_match.url_name == 'override_manage' %}active{% endif %}" style="color:var(--nea-yellow);">
+        <i class="fas fa-shield-alt"></i> Manage Overrides
+      </a>
     </div>
     <div class="nav-section">
       <div class="nav-section-label">Analytics</div>
@@ -435,6 +438,9 @@
       </a>
       <a href="{% url 'report_create' %}" class="nav-item {% if request.resolver_match.url_name == 'report_create' %}active{% endif %}">
         <i class="fas fa-plus-circle"></i> New Report
+      </a>
+      <a href="{% url 'override_request' %}" class="nav-item {% if request.resolver_match.url_name == 'override_request' %}active{% endif %}" style="color:var(--nea-yellow);">
+        <i class="fas fa-exclamation-triangle"></i> Request Override
       </a>
     </div>
     {# DC Analytics removed — will be added later #}
