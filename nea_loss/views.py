@@ -3644,6 +3644,7 @@ def _generate_excel_report(report):
 
     row = table_row + 1
     return wb
+<<<<<<< HEAD
 
 
 # ==================== DC REPORT OVERRIDE VIEWS ====================
