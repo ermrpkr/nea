@@ -31,16 +31,16 @@ urlpatterns = [
     path('reports/provincial/', views.ProvincialReportListView.as_view(), name='provincial_report_list'),
     path('reports/provincial/dc-reports/', views.ProvincialDCReportsView.as_view(), name='provincial_dc_reports'),
     path('reports/provincial/create/', views.ProvincialReportCreateView.as_view(), name='provincial_report_create'),
-    # path('reports/provincial/print/', views.ProvincialReportPrintView.as_view(), name='provincial_report_print'),  # TODO: implement ProvincialReportPrintView
-    # path('reports/provincial/<int:pk>/', views.ProvincialReportDetailView.as_view(), name='provincial_report_detail'),  # TODO: implement ProvincialReportDetailView
-    # path('reports/provincial/<int:pk>/excel/', views.ProvincialReportDetailView.as_view(), name='provincial_report_excel'),  # TODO: implement ProvincialReportDetailView
+    path('reports/provincial/print/', views.ProvincialReportPrintView.as_view(), name='provincial_report_print'),
+    path('reports/provincial/<int:pk>/', views.ProvincialReportDetailView.as_view(), name='provincial_report_detail'),
+    path('reports/provincial/<int:pk>/excel/', views.ProvincialReportDetailView.as_view(), name='provincial_report_excel'),
 
     # Organization Management
     path('organizations/', views.OrgOverviewView.as_view(), name='org_overview'),
     path('organizations/dc/<int:pk>/', views.DCDetailView.as_view(), name='dc_detail'),
 
     # DC Yearly Targets
-    # path('targets/dc-yearly/', views.DCYearlyTargetView.as_view(), name='dc_yearly_targets'),  # TODO: implement DCYearlyTargetView
+    path('targets/dc-yearly/', views.DCYearlyTargetView.as_view(), name='dc_yearly_targets'),
 
     # Analytics
     path('analytics/', views.AnalyticsView.as_view(), name='analytics'),
@@ -53,10 +53,10 @@ urlpatterns = [
 
     # Messaging
     path('messages/', views.MessageInboxView.as_view(), name='message_inbox'),
-    # path('messages/compose/', views.MessageComposeView.as_view(), name='message_compose'),  # TODO: implement MessageComposeView
+    path('messages/compose/', views.MessageComposeView.as_view(), name='message_compose'),
     path('messages/<int:pk>/', views.MessageDetailView.as_view(), name='message_detail'),
     path('messages/<int:pk>/delete/', views.message_delete, name='message_delete'),
-    # path('messages/<int:pk>/reply/', views.message_reply, name='message_reply'),  # TODO: implement message_reply
+    path('messages/<int:pk>/reply/', views.message_reply, name='message_reply'),
     path('api/messages/unread/', views.api_unread_messages, name='api_unread_messages'),
 
     # API endpoints
