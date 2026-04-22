@@ -1152,6 +1152,15 @@ class MonthlyDataView(LoginRequiredMixin, View):
         
         if month > 1:  # For months after Shrawan
             previous_month = month - 1
+            
+            # Check if there's an approved override for this month that allows skipping previous months
+            approved_override = DCReportOverride.objects.filter(
+                distribution_center=report.distribution_center,
+                fiscal_year=report.fiscal_year,
+                resume_month=month,
+                status='APPROVED'
+            ).first()
+            
             try:
                 # First check if previous month report exists and is approved
                 previous_loss_report = LossReport.objects.get(
@@ -1160,7 +1169,7 @@ class MonthlyDataView(LoginRequiredMixin, View):
                     month=previous_month
                 )
                 
-                if previous_loss_report.status != 'APPROVED':
+                if previous_loss_report.status != 'APPROVED' and not approved_override:
                     messages.error(
                         request,
                         f'Previous month report ({month_names.get(previous_month, "")}) must be approved before creating {month_names.get(month, "")} report.'
@@ -1188,7 +1197,11 @@ class MonthlyDataView(LoginRequiredMixin, View):
                     
             except LossReport.DoesNotExist:
                 # Previous month report doesn't exist
-                if request.user.is_dc_level:  # Only show error to DC users
+                # Check if there's an approved override that allows this
+                if approved_override:
+                    # Override approved - use 0 for all previous readings
+                    pass  # previous_readings_dict will remain empty, so all readings start from 0
+                elif request.user.is_dc_level:  # Only show error to DC users
                     messages.error(
                         request,
                         f'Previous month report ({month_names.get(previous_month, "")}) hasn\'t been created. Please create that first.'
