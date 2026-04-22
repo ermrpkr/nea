@@ -1351,6 +1351,7 @@ class MonthlyDataView(LoginRequiredMixin, View):
             'new_meter_point_ids': list(new_meter_point_ids),
             'single_reading_ids': list(single_reading_ids),  # ENERGY_IMPORT / ENERGY_EXPORT
             'dc_yearly_target': dc_yearly_target,
+            'approved_override': approved_override if month > 1 else None,
         })
 
 
@@ -2224,8 +2225,17 @@ def api_save_meter_readings(request):
                 provided_prev = decimal.Decimal(str(r.get('previous_reading', 0) or 0))
                 report_month = monthly.report.month
 
-                if provided_prev == 0 and report_month > 1:
+                # Check if there's an approved override for this month
+                approved_override = DCReportOverride.objects.filter(
+                    distribution_center=monthly.report.distribution_center,
+                    fiscal_year=monthly.report.fiscal_year,
+                    resume_month=report_month,
+                    status='APPROVED'
+                ).first()
+                
+                if provided_prev == 0 and report_month > 1 and not approved_override:
                     # Look up last month's approved present reading for this meter point
+                    # Only auto-fill if there's NO override
                     prev_month_num = report_month - 1
                     auto_prev = MeterReading.objects.filter(
                         meter_point=mp,

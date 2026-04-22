@@ -175,12 +175,13 @@
               <input type="number" class="meter-input previous-r" step="0.001" value="0" readonly
                      style="background:#F0F4F8;color:#A0AEC0;cursor:not-allowed;"
                      title="Energy Import/Export type: unit = present × M.F. only">
-            {% elif month == 1 %}
-              {# Shrawan: first month of fiscal year — previous reading is user-entered #}
+            {% elif month == 1 or approved_override %}
+              {# Shrawan or override month: previous reading is user-entered #}
               <input type="number" class="meter-input previous-r" step="0.001"
                      value="{{ reading.previous_reading|default:'' }}"
                      placeholder="0.000" oninput="calcRow(this)"
-                     {% if not can_edit %}disabled{% endif %}>
+                     {% if not can_edit %}disabled{% endif %}
+                     {% if approved_override %}title="Override month — enter previous reading manually"{% endif %}>
             {% elif mp.pk in new_meter_point_ids %}
               {# Brand-new feeder with no prior reading in any month — user enters manually #}
               <input type="number" class="meter-input previous-r" step="0.001"
@@ -305,12 +306,13 @@
               <input type="number" class="meter-input previous-r" step="0.001" value="0" readonly
                      style="background:#F0F4F8;color:#A0AEC0;cursor:not-allowed;"
                      title="Energy Export type: unit = present × M.F. only">
-            {% elif month == 1 %}
-              {# Shrawan: first month — previous reading user-entered #}
+            {% elif month == 1 or approved_override %}
+              {# Shrawan or override month: previous reading is user-entered #}
               <input type="number" class="meter-input previous-r" step="0.001"
                      value="{{ reading.previous_reading|default:'' }}"
                      placeholder="0.000" oninput="calcRow(this)"
-                     {% if not can_edit %}disabled{% endif %}>
+                     {% if not can_edit %}disabled{% endif %}
+                     {% if approved_override %}title="Override month — enter previous reading manually"{% endif %}>
             {% elif mp.pk in new_meter_point_ids %}
               {# New feeder with no prior reading — user enters manually #}
               <input type="number" class="meter-input previous-r" step="0.001"
