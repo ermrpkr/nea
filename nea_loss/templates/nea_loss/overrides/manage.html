@@ -180,10 +180,12 @@
                                     <th>Fiscal Year</th>
                                     <th>Resume Month</th>
                                     <th>Status</th>
+                                    <th>Active</th>
                                     <th>Requested By</th>
                                     <th>Processed By</th>
                                     <th>Created</th>
                                     <th>Processed</th>
+                                    <th>Actions</th>
                                     <th>Notes</th>
                                 </tr>
                             </thead>
@@ -202,6 +204,17 @@
                                         <span class="badge bg-danger">Rejected</span>
                                         {% endif %}
                                     </td>
+                                    <td>
+                                        {% if override.status == 'APPROVED' %}
+                                            {% if override.is_active %}
+                                            <span class="badge bg-success">Active</span>
+                                            {% else %}
+                                            <span class="badge bg-secondary">Inactive</span>
+                                            {% endif %}
+                                        {% else %}
+                                        <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
                                     <td>{{ override.requested_by.full_name }}</td>
                                     <td>
                                         {% if override.approved_by %}
@@ -216,6 +229,37 @@
                                         {{ override.approved_at|date:"M d, Y H:i" }}
                                         {% else %}
                                         <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if override.status == 'APPROVED' %}
+                                            <div class="btn-group btn-group-sm" role="group">
+                                                {% if override.is_active %}
+                                                <form method="post" style="display: inline;">
+                                                    {% csrf_token %}
+                                                    <input type="hidden" name="override_id" value="{{ override.pk }}">
+                                                    <input type="hidden" name="action" value="deactivate">
+                                                    <button type="submit" class="btn btn-warning btn-sm" 
+                                                            title="Deactivate this override - DC users cannot create reports for this month"
+                                                            onclick="return confirm('Are you sure you want to deactivate this override? DC users will no longer be able to create reports for {{ override.get_resume_month_display }}.')">
+                                                        <i class="fas fa-pause"></i> Deactivate
+                                                    </button>
+                                                </form>
+                                                {% else %}
+                                                <form method="post" style="display: inline;">
+                                                    {% csrf_token %}
+                                                    <input type="hidden" name="override_id" value="{{ override.pk }}">
+                                                    <input type="hidden" name="action" value="activate">
+                                                    <button type="submit" class="btn btn-success btn-sm" 
+                                                            title="Activate this override - DC users can create reports for this month"
+                                                            onclick="return confirm('Are you sure you want to activate this override? DC users will be able to create reports for {{ override.get_resume_month_display }}.')">
+                                                        <i class="fas fa-play"></i> Activate
+                                                    </button>
+                                                </form>
+                                                {% endif %}
+                                            </div>
+                                        {% else %}
+                                            <span class="text-muted">-</span>
                                         {% endif %}
                                     </td>
                                     <td>

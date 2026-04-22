@@ -561,6 +561,7 @@ class DCReportOverride(models.Model):
     skip_to_month = models.PositiveSmallIntegerField(choices=NEPALI_MONTH_CHOICES, null=True, blank=True)
     
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    is_active = models.BooleanField(default=True, help_text='Whether this override is currently active')
     reason = models.TextField(help_text='Reason for override request (e.g., technical problems, system downtime)')
     admin_notes = models.TextField(blank=True, help_text='Admin notes on approval/rejection')
     
@@ -593,6 +594,16 @@ class DCReportOverride(models.Model):
         self.approved_by = approved_by
         self.admin_notes = admin_notes
         self.approved_at = timezone.now()
+        self.save()
+
+    def activate(self):
+        """Activate the override"""
+        self.is_active = True
+        self.save()
+
+    def deactivate(self):
+        """Deactivate the override"""
+        self.is_active = False
         self.save()
 
     class Meta:

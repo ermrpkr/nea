@@ -987,12 +987,13 @@ class ReportCreateView(LoginRequiredMixin, View):
             if month >= dc.report_start_month:
                 previous_month = month - 1
                 
-                # Check if there's an approved override for this situation
+                # Check if there's an approved and active override for this situation
                 approved_override = DCReportOverride.objects.filter(
                     distribution_center=dc,
                     fiscal_year=fy,
                     status='APPROVED',
-                    resume_month=month
+                    resume_month=month,
+                    is_active=True
                 ).first()
                 
                 if approved_override:
@@ -1153,12 +1154,13 @@ class MonthlyDataView(LoginRequiredMixin, View):
         if month > 1:  # For months after Shrawan
             previous_month = month - 1
             
-            # Check if there's an approved override for this month that allows skipping previous months
+            # Check if there's an approved and active override for this month that allows skipping previous months
             approved_override = DCReportOverride.objects.filter(
                 distribution_center=report.distribution_center,
                 fiscal_year=report.fiscal_year,
                 resume_month=month,
-                status='APPROVED'
+                status='APPROVED',
+                is_active=True
             ).first()
             
             try:
@@ -2225,12 +2227,13 @@ def api_save_meter_readings(request):
                 provided_prev = decimal.Decimal(str(r.get('previous_reading', 0) or 0))
                 report_month = monthly.report.month
 
-                # Check if there's an approved override for this month
+                # Check if there's an approved and active override for this month
                 approved_override = DCReportOverride.objects.filter(
                     distribution_center=monthly.report.distribution_center,
                     fiscal_year=monthly.report.fiscal_year,
                     resume_month=report_month,
-                    status='APPROVED'
+                    status='APPROVED',
+                    is_active=True
                 ).first()
                 
                 if provided_prev == 0 and report_month > 1 and not approved_override:
@@ -3825,10 +3828,10 @@ class OverrideManagementView(LoginRequiredMixin, View):
 
     def post(self, request):
         override_id = request.POST.get('override_id')
-        action = request.POST.get('action')  # 'approve' or 'reject'
+        action = request.POST.get('action')  # 'approve', 'reject', 'activate', or 'deactivate'
         admin_notes = request.POST.get('admin_notes', '').strip()
 
-        if not override_id or action not in ['approve', 'reject']:
+        if not override_id or action not in ['approve', 'reject', 'activate', 'deactivate']:
             messages.error(request, 'Invalid request.')
             return self.get(request)
 
@@ -3850,7 +3853,7 @@ class OverrideManagementView(LoginRequiredMixin, View):
                 
                 audit_action = 'APPROVE'
                 
-            else:  # reject
+            elif action == 'reject':
                 override.reject(approved_by=request.user, admin_notes=admin_notes)
                 messages.success(request, f'Override rejected for {override.distribution_center.name}.')
                 
@@ -3864,6 +3867,16 @@ class OverrideManagementView(LoginRequiredMixin, View):
                 )
                 
                 audit_action = 'REJECT'
+                
+            elif action == 'activate':
+                override.activate()
+                messages.success(request, f'Override activated for {override.distribution_center.name}.')
+                audit_action = 'ACTIVATE'
+                
+            elif action == 'deactivate':
+                override.deactivate()
+                messages.success(request, f'Override deactivated for {override.distribution_center.name}. DC users can no longer create reports for {override.get_resume_month_display()}.')
+                audit_action = 'DEACTIVATE'
 
             # Create audit log
             AuditLog.objects.create(
