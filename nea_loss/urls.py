@@ -31,7 +31,7 @@ urlpatterns = [
     path('reports/provincial/', views.ProvincialReportListView.as_view(), name='provincial_report_list'),
     path('reports/provincial/dc-reports/', views.ProvincialDCReportsView.as_view(), name='provincial_dc_reports'),
     path('reports/provincial/create/', views.ProvincialReportCreateView.as_view(), name='provincial_report_create'),
-    path('reports/provincial/print/', views.ProvincialReportPrintView.as_view(), name='provincial_report_print'),
+    # path('reports/provincial/print/', views.ProvincialReportPrintView.as_view(), name='provincial_report_print'),  # TODO: implement ProvincialReportPrintView
     path('reports/provincial/<int:pk>/', views.ProvincialReportDetailView.as_view(), name='provincial_report_detail'),
     path('reports/provincial/<int:pk>/excel/', views.ProvincialReportDetailView.as_view(), name='provincial_report_excel'),
 
