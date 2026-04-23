@@ -1,0 +1,55 @@
+{% extends 'nea_loss/reports/monthly_data.html' %}
+{% load nea_filters %}
+
+{% block extra_head %}
+<style>
+  .admin-editable-previous {
+    background-color: #fff3cd !important;
+    border: 1px solid #ffeaa7 !important;
+  }
+  .admin-editable-previous:focus {
+    border-color: #ffc107 !important;
+    box-shadow: 0 0 0 0.2rem rgba(255, 193, 7, 0.25) !important;
+  }
+</style>
+{% endblock %}
+
+<!-- Override the previous reading input sections for admin-created reports -->
+{% block content %}
+{{ block.super }}
+
+<script>
+// Override the previous reading behavior for admin-created reports
+document.addEventListener('DOMContentLoaded', function() {
+    // For admin-created reports, make all previous readings editable
+    if ({{ admin_created_report|yesno:"true,false" }}) {
+        // Find all previous reading inputs that are readonly
+        const previousInputs = document.querySelectorAll('input.previous-r[readonly]');
+        
+        previousInputs.forEach(function(input) {
+            // Skip single reading types (ENERGY_IMPORT/ENERGY_EXPORT)
+            const row = input.closest('tr');
+            if (row && row.dataset.single === '1') {
+                return; // Don't modify single reading inputs
+            }
+            
+            // Make the input editable
+            input.removeAttribute('readonly');
+            input.classList.add('admin-editable-previous');
+            input.setAttribute('title', 'Admin-created report — enter previous reading manually');
+            input.style.background = '#fff3cd';
+            input.style.cursor = 'text';
+            
+            // Add input event listener to recalculate
+            input.addEventListener('input', function() {
+                if (typeof calcRow === 'function') {
+                    calcRow(this);
+                }
+            });
+        });
+        
+        console.log('Admin-created report: Made all previous readings editable');
+    }
+});
+</script>
+{% endblock %}

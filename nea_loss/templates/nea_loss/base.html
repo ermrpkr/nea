@@ -384,6 +384,9 @@
       <a href="/admin/" class="nav-item" target="_blank">
         <i class="fas fa-database"></i> Django Admin Panel
       </a>
+      {% if admin_tools_enabled %}
+      {% include 'admin_tools/sidebar_button.html' %}
+      {% endif %}
     </div>
 
     {# ── MD / DMD / DIRECTOR: read-only analytics + reports ── #}

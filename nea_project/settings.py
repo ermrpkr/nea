@@ -98,6 +98,8 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'nea_loss.context_processors.nea_permissions',
+                # Admin Tools (separate module - can be easily removed)
+                'nea_loss.admin_tools.context_processors.admin_tools_context',
             ],
         },
     },

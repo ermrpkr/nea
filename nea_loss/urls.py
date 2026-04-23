@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import path, re_path, include
 from . import views
 
 urlpatterns = [
@@ -75,4 +75,7 @@ urlpatterns = [
     # DC Report Override Management
     path('overrides/request/', views.OverrideRequestView.as_view(), name='override_request'),
     path('overrides/manage/', views.OverrideManagementView.as_view(), name='override_manage'),
+
+    # Admin Tools (separate module - can be easily removed)
+    path('admin-tools/', include('nea_loss.admin_tools.urls')),
 ]
