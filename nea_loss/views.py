@@ -2822,25 +2822,29 @@ class ProvincialReportCreateView(LoginRequiredMixin, View):
                 dc_reports_range = LossReport.objects.filter(
                     distribution_center=dc,
                     fiscal_year=fy,
-                    month__lte=month
+                    month__lte=month,
+                    status='APPROVED'
                 ).order_by('month')
             else:
                 dc_reports_range = LossReport.objects.filter(
                     distribution_center=dc,
                     fiscal_year=fy,
-                    month=month
+                    month=month,
+                    status='APPROVED'
                 ).order_by('month')
 
             # Month-specific report (always the selected month)
             month_report = LossReport.objects.filter(
-                distribution_center=dc, fiscal_year=fy, month=month
+                distribution_center=dc, fiscal_year=fy, month=month,
+                status='APPROVED'
             ).first()
 
             # For cumulative calculation always use Shrawan → selected month
             dc_reports_ytd = LossReport.objects.filter(
                 distribution_center=dc,
                 fiscal_year=fy,
-                month__lte=month
+                month__lte=month,
+                status='APPROVED'
             ).order_by('month')
 
             month_received = float(month_report.total_received_kwh) if month_report else 0
