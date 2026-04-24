@@ -3273,6 +3273,8 @@ def _generate_excel_report(report):
     ws[f'A{row}'].font = Font(name='Arial', bold=True, size=10)
     ws[f'A{row}'].fill = PatternFill('solid', start_color='D6EAF8')
     row += 1
+    # Get months data for provincial targets section
+    months = list(report.monthly_data.order_by('month'))
     prov_target_headers = ['Month'] + [m.month_name for m in months]
     for ci, h in enumerate(prov_target_headers, 1):
         cell = ws.cell(row=row, column=ci, value=h)
@@ -3297,7 +3299,6 @@ def _generate_excel_report(report):
     ws[f'A{row}'].alignment = center
 
     row += 2
-    months = list(report.monthly_data.order_by('month'))
     month_names = [m.month_name for m in months]
 
     # Summary header
