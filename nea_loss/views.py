@@ -3345,8 +3345,8 @@ def _generate_excel_report(report):
     row += 1
 
     # Preload data for section tables
-    import_types = ['SUBSTATION', 'FEEDER_11KV', 'FEEDER_33KV', 'INTERBRANCH', 'IPP']
-    export_types = ['EXPORT_DC', 'EXPORT_IPP']
+    import_types = ['SUBSTATION', 'FEEDER_11KV', 'FEEDER_33KV', 'INTERBRANCH', 'IPP','ENERGY_IMPORT']
+    export_types = ['EXPORT_DC', 'EXPORT_IPP','ENERGY_EXPORT']
     all_points = MeterPoint.objects.filter(
         distribution_center=report.distribution_center,
         source_type__in=import_types + export_types,
