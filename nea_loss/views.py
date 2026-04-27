@@ -2743,8 +2743,8 @@ class ProvincialReportCreateView(LoginRequiredMixin, View):
     def dispatch(self, request, *args, **kwargs):
         user = request.user
         if user.is_authenticated:
-            if not (getattr(user, 'is_system_admin', False) or user.is_provincial):
-                messages.error(request, 'Only Provincial Office users can create provincial reports.')
+            if not (getattr(user, 'is_system_admin', False) or user.is_provincial or user.is_dc_level):
+                messages.error(request, 'Only Provincial Office and DC users can create monthly reports.')
                 return redirect('dashboard')
         return super().dispatch(request, *args, **kwargs)
 
@@ -2752,8 +2752,11 @@ class ProvincialReportCreateView(LoginRequiredMixin, View):
         user = request.user
         if getattr(user, 'is_system_admin', False):
             provincial_offices = ProvincialOffice.objects.all()
-        else:
+        elif user.is_provincial:
             provincial_offices = ProvincialOffice.objects.filter(pk=user.provincial_office_id)
+        else:
+            # DCS users - show all provincial offices they can create reports for
+            provincial_offices = ProvincialOffice.objects.all()
 
         return render(request, self.template_name, {
             'fiscal_years': FiscalYear.objects.all(),
@@ -2822,25 +2825,28 @@ class ProvincialReportCreateView(LoginRequiredMixin, View):
                 dc_reports_range = LossReport.objects.filter(
                     distribution_center=dc,
                     fiscal_year=fy,
-                    month__lte=month
+                    month__lte=month,
+                    status='APPROVED'
                 ).order_by('month')
             else:
                 dc_reports_range = LossReport.objects.filter(
                     distribution_center=dc,
                     fiscal_year=fy,
-                    month=month
+                    month=month,
+                    status='APPROVED'
                 ).order_by('month')
 
             # Month-specific report (always the selected month)
             month_report = LossReport.objects.filter(
-                distribution_center=dc, fiscal_year=fy, month=month
+                distribution_center=dc, fiscal_year=fy, month=month, status='APPROVED'
             ).first()
 
             # For cumulative calculation always use Shrawan → selected month
             dc_reports_ytd = LossReport.objects.filter(
                 distribution_center=dc,
                 fiscal_year=fy,
-                month__lte=month
+                month__lte=month,
+                status='APPROVED'
             ).order_by('month')
 
             month_received = float(month_report.total_received_kwh) if month_report else 0
@@ -3273,6 +3279,8 @@ def _generate_excel_report(report):
     ws[f'A{row}'].font = Font(name='Arial', bold=True, size=10)
     ws[f'A{row}'].fill = PatternFill('solid', start_color='D6EAF8')
     row += 1
+    # Get months data for provincial targets section
+    months = list(report.monthly_data.order_by('month'))
     prov_target_headers = ['Month'] + [m.month_name for m in months]
     for ci, h in enumerate(prov_target_headers, 1):
         cell = ws.cell(row=row, column=ci, value=h)
@@ -3297,7 +3305,6 @@ def _generate_excel_report(report):
     ws[f'A{row}'].alignment = center
 
     row += 2
-    months = list(report.monthly_data.order_by('month'))
     month_names = [m.month_name for m in months]
 
     # Summary header
@@ -3345,8 +3352,8 @@ def _generate_excel_report(report):
     row += 1
 
     # Preload data for section tables
-    import_types = ['SUBSTATION', 'FEEDER_11KV', 'FEEDER_33KV', 'INTERBRANCH', 'IPP']
-    export_types = ['EXPORT_DC', 'EXPORT_IPP']
+    import_types = ['SUBSTATION', 'FEEDER_11KV', 'FEEDER_33KV', 'INTERBRANCH', 'IPP', 'ENERGY_IMPORT']
+    export_types = ['EXPORT_DC', 'EXPORT_IPP', 'ENERGY_EXPORT']
     all_points = MeterPoint.objects.filter(
         distribution_center=report.distribution_center,
         source_type__in=import_types + export_types,
@@ -3890,5 +3897,356 @@ class OverrideManagementView(LoginRequiredMixin, View):
 
         except DCReportOverride.DoesNotExist:
             messages.error(request, 'Override not found.')
+
+
+# ─────────────────────────── DCS MONTHLY REPORT VIEWS ───────────────────────────
+
+class DCSMonthlyReportCreateView(LoginRequiredMixin, View):
+    """DCS users generate monthly consolidated reports from DC data."""
+    template_name = 'nea_loss/reports/dcs_monthly_create.html'
+
+    def dispatch(self, request, *args, **kwargs):
+        user = request.user
+        if user.is_authenticated:
+            if not user.is_dc_level:
+                messages.error(request, 'Only DCS users can create monthly reports.')
+                return redirect('dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request):
+        user = request.user
+        # Get the user's distribution center
+        dc = user.distribution_center
+        if not dc:
+            messages.error(request, 'No distribution center assigned to your account.')
+            return redirect('dashboard')
+
+        return render(request, self.template_name, {
+            'fiscal_years': FiscalYear.objects.all(),
+            'distribution_center': dc,
+            'months_list': [
+                (1,'Shrawan'),(2,'Bhadra'),(3,'Ashwin'),(4,'Kartik'),
+                (5,'Mangsir'),(6,'Poush'),(7,'Magh'),(8,'Falgun'),
+                (9,'Chaitra'),(10,'Baisakh'),(11,'Jestha'),(12,'Ashadh'),
+            ],
+        })
+
+    def post(self, request):
+        user = request.user
+        dc = user.distribution_center
+        
+        if not dc:
+            messages.error(request, 'No distribution center assigned to your account.')
+            return redirect('dcs_monthly_report_create')
+
+        fy_id = request.POST.get('fiscal_year')
+        month_str = request.POST.get('month', '')
+        # Handle "Report Till Now" case (month=0) as show_all=True
+        if month_str.strip() == '0':
+            original_month = 0
+        else:
+            original_month = int(month_str) if month_str.strip() else None
+        action = request.POST.get('action', 'preview')
+
+        try:
+            fy = FiscalYear.objects.get(pk=fy_id)
+        except Exception:
+            messages.error(request, 'Invalid fiscal year.')
+            return redirect('dcs_monthly_report_create')
+
+        month_names = {
+            1: 'Shrawan', 2: 'Bhadra', 3: 'Ashwin', 4: 'Kartik',
+            5: 'Mangsir', 6: 'Poush', 7: 'Magh', 8: 'Falgun',
+            9: 'Chaitra', 10: 'Baisakh', 11: 'Jestha', 12: 'Ashadh'
+        }
+
+        # Auto-determine if showing all months or specific month
+        show_all = original_month is None or original_month == 0  # If no month selected, show all available months
+        
+        # If no month selected, find the latest available month
+        if show_all:
+            latest_report = LossReport.objects.filter(
+                distribution_center=dc,
+                fiscal_year=fy,
+                status='APPROVED'
+            ).order_by('-month').first()
+            
+            if latest_report:
+                month = latest_report.month
+            else:
+                messages.error(request, 'No approved reports found for this distribution center and fiscal year.')
+                return redirect('dcs_monthly_report_create')
+        else:
+            month = original_month
+
+        # Get the report data for the selected month(s)
+        if show_all:
+            # Get all approved reports from Shrawan to selected month
+            reports = LossReport.objects.filter(
+                distribution_center=dc,
+                fiscal_year=fy,
+                month__lte=month,
+                status='APPROVED'
+            ).order_by('month')
+        else:
+            # Get only the specific month
+            reports = LossReport.objects.filter(
+                distribution_center=dc,
+                fiscal_year=fy,
+                month=month,
+                status='APPROVED'
+            )
+
+        if not reports.exists():
+            messages.error(request, 'No approved reports found for the selected period.')
+            return redirect('dcs_monthly_report_create')
+
+        # Build comprehensive report data structure
+        dc_report_data = []
+        grand_total_received = 0
+        grand_total_utilised = 0
+        cumulative_received = 0
+        cumulative_loss = 0
+
+        for report in reports:
+            dc_target_pct = getattr(report, 'loss_target_percent', None)
+            
+            monthly_received = float(report.total_received_kwh or 0)
+            monthly_utilised = float(report.total_utilised_kwh or 0)
+            monthly_loss = float(report.total_loss_kwh or 0)
+            monthly_il = round(monthly_loss / monthly_received * 100, 4) if monthly_received > 0 else 0
+            
+            # Calculate cumulative totals
+            cumulative_received += monthly_received
+            cumulative_loss += monthly_loss
+            cumulative_il = round(cumulative_loss / cumulative_received * 100, 4) if cumulative_received > 0 else 0
+            
+            # Get detailed monthly data
+            monthly_data = report.monthly_data.all()
+            
+            # Import meter readings
+            import_readings = []
+            import_total = 0
+            for md in monthly_data:
+                for reading in md.meter_readings.filter(meter_point__source_type__in=["SUBSTATION","FEEDER_11KV","FEEDER_33KV","INTERBRANCH","IPP","ENERGY_IMPORT"]):
+                    unit_kwh = float(reading.unit_kwh or 0)
+                    import_total += unit_kwh
+                    import_readings.append({
+                        'meter_point': reading.meter_point,
+                        'present_reading': reading.present_reading,
+                        'previous_reading': reading.previous_reading,
+                        'difference': reading.difference,
+                        'mf': reading.multiplying_factor,
+                        'unit_kwh': unit_kwh
+                    })
+            
+            # Export meter readings
+            export_readings = []
+            export_total = 0
+            for md in monthly_data:
+                for reading in md.meter_readings.filter(meter_point__source_type__in=["EXPORT_DC","EXPORT_IPP","ENERGY_EXPORT"]):
+                    unit_kwh = float(reading.unit_kwh or 0)
+                    export_total += unit_kwh
+                    export_readings.append({
+                        'meter_point': reading.meter_point,
+                        'present_reading': reading.present_reading,
+                        'previous_reading': reading.previous_reading,
+                        'difference': reading.difference,
+                        'mf': reading.multiplying_factor,
+                        'unit_kwh': unit_kwh
+                    })
+            
+            # Consumer utilisation data
+            consumer_utilisations = []
+            for md in monthly_data:
+                for utilisation in md.energy_utilisations.all():
+                    consumer_utilisations.append({
+                        'category': utilisation.consumer_category,
+                        'energy_kwh': float(utilisation.energy_kwh or 0),
+                        'remarks': utilisation.remarks
+                    })
+            
+            # Consumer count data
+            consumer_counts = []
+            for md in monthly_data:
+                for count in md.consumer_counts.all():
+                    consumer_counts.append({
+                        'category': count.consumer_category,
+                        'count': int(count.count or 0),
+                        'remarks': count.remarks
+                    })
+            
+            dc_report_data.append({
+                'dc': dc,
+                'month': report.month,
+                'month_name': month_names.get(report.month, ''),
+                'total_received': monthly_received,
+                'total_utilised': monthly_utilised,
+                'total_loss': monthly_loss,
+                'monthly_il': monthly_il,
+                'cumulative_il': cumulative_il,
+                'dc_target': dc_target_pct,
+                'nea_target': float(fy.loss_target_percent),
+                'import_readings': import_readings,
+                'export_readings': export_readings,
+                'import_total': import_total,
+                'export_total': export_total,
+                'consumer_utilisations': consumer_utilisations,
+                'consumer_counts': consumer_counts
+            })
+            
+            grand_total_received += monthly_received
+            grand_total_utilised += monthly_utilised
+
+        grand_loss = grand_total_received - grand_total_utilised
+        grand_il = round(grand_loss / grand_total_received * 100, 4) if grand_total_received else 0
+
+        # Prepare consolidated data for "Report Till Now" with monthwise columns
+        consolidated_imports = {}
+        consolidated_exports = {}
+        consolidated_utilisation = {}
+        consolidated_counts = {}
+        
+        if show_all:
+            # Get all months in the report for column headers
+            report_months = [row['month_name'] for row in dc_report_data]
+            
+            for row in dc_report_data:
+                month_name = row['month_name']
+                
+                # Consolidate import readings with monthwise columns
+                for reading in row['import_readings']:
+                    meter_name = reading['meter_point'].name
+                    source_type = reading['meter_point'].source_type
+                    # Create unique key combining meter name and source type
+                    unique_key = f"{meter_name}_{source_type}"
+                    
+                    if unique_key not in consolidated_imports:
+                        consolidated_imports[unique_key] = {
+                            'meter_point': reading['meter_point'],
+                            'monthly_data': {month: 0 for month in report_months},
+                            'total_units': 0
+                        }
+                    consolidated_imports[unique_key]['monthly_data'][month_name] += reading['unit_kwh']
+                    consolidated_imports[unique_key]['total_units'] += reading['unit_kwh']
+                
+                # Consolidate export readings with monthwise columns
+                for reading in row['export_readings']:
+                    meter_name = reading['meter_point'].name
+                    source_type = reading['meter_point'].source_type
+                    # Create unique key combining meter name and source type
+                    unique_key = f"{meter_name}_{source_type}"
+                    
+                    if unique_key not in consolidated_exports:
+                        consolidated_exports[unique_key] = {
+                            'meter_point': reading['meter_point'],
+                            'monthly_data': {month: 0 for month in report_months},
+                            'total_units': 0
+                        }
+                    consolidated_exports[unique_key]['monthly_data'][month_name] += reading['unit_kwh']
+                    consolidated_exports[unique_key]['total_units'] += reading['unit_kwh']
+                
+                # Consolidate consumer utilisation with monthwise columns
+                for utilisation in row['consumer_utilisations']:
+                    cat_name = utilisation['category'].name
+                    if cat_name not in consolidated_utilisation:
+                        consolidated_utilisation[cat_name] = {
+                            'category': utilisation['category'],
+                            'monthly_data': {month: 0 for month in report_months},
+                            'total_energy': 0
+                        }
+                    consolidated_utilisation[cat_name]['monthly_data'][month_name] += utilisation['energy_kwh']
+                    consolidated_utilisation[cat_name]['total_energy'] += utilisation['energy_kwh']
+                
+                # Consolidate consumer counts with monthwise columns
+                for count in row['consumer_counts']:
+                    cat_name = count['category'].name
+                    if cat_name not in consolidated_counts:
+                        consolidated_counts[cat_name] = {
+                            'category': count['category'],
+                            'monthly_data': {month: 0 for month in report_months},
+                            'total_count': 0
+                        }
+                    consolidated_counts[cat_name]['monthly_data'][month_name] += count['count']
+                    consolidated_counts[cat_name]['total_count'] += count['count']
+            
+            # Store months for template use
+            consolidated_months = report_months
+            
+            # Ensure consolidated data is available even if empty
+            if not consolidated_imports and not consolidated_exports and not consolidated_utilisation and not consolidated_counts:
+                # Create empty structure to avoid template errors
+                consolidated_imports = {}
+                consolidated_exports = {}
+                consolidated_utilisation = {}
+                consolidated_counts = {}
+            
+            # Calculate grand totals for each consolidated section
+            import_monthly_totals = {month: 0 for month in report_months}
+            import_grand_total = 0
+            
+            for meter_name, data in consolidated_imports.items():
+                for month in report_months:
+                    import_monthly_totals[month] += data['monthly_data'][month]
+                import_grand_total += data['total_units']
+            
+            export_monthly_totals = {month: 0 for month in report_months}
+            export_grand_total = 0
+            
+            for meter_name, data in consolidated_exports.items():
+                for month in report_months:
+                    export_monthly_totals[month] += data['monthly_data'][month]
+                export_grand_total += data['total_units']
+            
+            utilisation_monthly_totals = {month: 0 for month in report_months}
+            utilisation_grand_total = 0
+            
+            for cat_name, data in consolidated_utilisation.items():
+                for month in report_months:
+                    utilisation_monthly_totals[month] += data['monthly_data'][month]
+                utilisation_grand_total += data['total_energy']
+            
+            count_monthly_totals = {month: 0 for month in report_months}
+            count_grand_total = 0
+            
+            for cat_name, data in consolidated_counts.items():
+                for month in report_months:
+                    count_monthly_totals[month] += data['monthly_data'][month]
+                count_grand_total += data['total_count']
+
+        context = {
+            'fiscal_years': FiscalYear.objects.all(),
+            'distribution_center': dc,
+            'months_list': [
+                (1,'Shrawan'),(2,'Bhadra'),(3,'Ashwin'),(4,'Kartik'),
+                (5,'Mangsir'),(6,'Poush'),(7,'Magh'),(8,'Falgun'),
+                (9,'Chaitra'),(10,'Baisakh'),(11,'Jestha'),(12,'Ashadh'),
+            ],
+            'report_data': dc_report_data,
+            'grand_total_received': grand_total_received,
+            'grand_total_utilised': grand_total_utilised,
+            'grand_il': round(grand_il, 2),
+            'selected_fy': fy,
+            'selected_month': month,
+            'selected_month_name': month_names.get(month, ''),
+            'nea_target_pct': float(fy.loss_target_percent),
+            'show_all': show_all,
+            'months_range': list(range(1, 13)) if show_all else [original_month if original_month is not None else 0],
+            'month_names': month_names,
+            'consolidated_imports': consolidated_imports,
+            'consolidated_exports': consolidated_exports,
+            'consolidated_utilisation': consolidated_utilisation,
+            'consolidated_counts': consolidated_counts,
+            'consolidated_months': consolidated_months if show_all else [],
+            'import_monthly_totals': import_monthly_totals if show_all else {},
+            'import_grand_total': import_grand_total if show_all else 0,
+            'export_monthly_totals': export_monthly_totals if show_all else {},
+            'export_grand_total': export_grand_total if show_all else 0,
+            'utilisation_monthly_totals': utilisation_monthly_totals if show_all else {},
+            'utilisation_grand_total': utilisation_grand_total if show_all else 0,
+            'count_monthly_totals': count_monthly_totals if show_all else {},
+            'count_grand_total': count_grand_total if show_all else 0,
+        }
+        return render(request, self.template_name, context)
 
         return self.get(request)

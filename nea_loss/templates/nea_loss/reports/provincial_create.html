@@ -245,7 +245,24 @@
 @media print {
   body * { visibility: hidden !important; }
   #provincial-report, #provincial-report * { visibility: visible !important; }
-  #provincial-report { position:fixed !important; top:0 !important; left:0 !important; width:100% !important; border:none !important; box-shadow:none !important; border-radius:0 !important; }
+  #provincial-report * { visibility: visible !important; }
+  #provincial-report { 
+    position: absolute !important; 
+    top: 0 !important; 
+    left: 0 !important; 
+    width: 100% !important; 
+    border: none !important; 
+    box-shadow: none !important; 
+    border-radius: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  #provincial-report .alert {
+    display: none !important;
+  }
+  #provincial-report button {
+    display: none !important;
+  }
 }
 </style>
 {% endif %}

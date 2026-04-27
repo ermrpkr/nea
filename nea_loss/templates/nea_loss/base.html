@@ -442,6 +442,9 @@
       <a href="{% url 'report_create' %}" class="nav-item {% if request.resolver_match.url_name == 'report_create' %}active{% endif %}">
         <i class="fas fa-plus-circle"></i> New Report
       </a>
+      <a href="{% url 'dcs_monthly_report_create' %}" class="nav-item {% if request.resolver_match.url_name == 'dcs_monthly_report_create' %}active{% endif %}" style="color:rgba(46,204,113,0.85);">
+        <i class="fas fa-magic"></i> Create Monthly Report
+      </a>
       <a href="{% url 'override_request' %}" class="nav-item {% if request.resolver_match.url_name == 'override_request' %}active{% endif %}" style="color:var(--nea-yellow);">
         <i class="fas fa-exclamation-triangle"></i> Request Override
       </a>
@@ -486,6 +489,11 @@
     {% endif %}
     {% if can_create_provincial_report and is_provincial %}
     <a href="{% url 'provincial_report_create' %}" class="btn btn-primary btn-sm" style="background:var(--nea-green);">
+      <i class="fas fa-magic"></i> Create Monthly Report
+    </a>
+    {% endif %}
+    {% if can_create_dcs_monthly_report and is_dc_level %}
+    <a href="{% url 'dcs_monthly_report_create' %}" class="btn btn-primary btn-sm" style="background:var(--nea-green);">
       <i class="fas fa-magic"></i> Create Monthly Report
     </a>
     {% endif %}

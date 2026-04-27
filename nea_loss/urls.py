@@ -35,6 +35,9 @@ urlpatterns = [
     path('reports/provincial/<int:pk>/', views.ProvincialReportDetailView.as_view(), name='provincial_report_detail'),
     path('reports/provincial/<int:pk>/excel/', views.ProvincialReportDetailView.as_view(), name='provincial_report_excel'),
 
+    # DCS Monthly Reports
+    path('reports/dcs-monthly/create/', views.DCSMonthlyReportCreateView.as_view(), name='dcs_monthly_report_create'),
+
     # Organization Management
     path('organizations/', views.OrgOverviewView.as_view(), name='org_overview'),
     path('organizations/dc/<int:pk>/', views.DCDetailView.as_view(), name='dc_detail'),

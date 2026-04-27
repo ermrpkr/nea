@@ -25,16 +25,19 @@ def nea_permissions(request):
     elif is_dc:
         can_create_dc = bool(getattr(u, 'distribution_center_id', None))
 
-    # Provincial office can create monthly consolidated reports
+    # Provincial office and DC users can create monthly consolidated reports
     can_create_prov = False
     if is_sys_admin:
         can_create_prov = True
     elif is_prov:
         can_create_prov = bool(getattr(u, 'provincial_office_id', None))
+    elif is_dc:
+        can_create_prov = bool(getattr(u, 'distribution_center_id', None))
 
     return {
         'can_create_loss_report': can_create_dc,
         'can_create_provincial_report': can_create_prov,
+        'can_create_dcs_monthly_report': can_create_prov,  # Same logic as provincial for DCS users
         'is_system_admin': is_sys_admin,
         'is_top_management': is_top,
         'is_provincial': is_prov,
