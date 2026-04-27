@@ -256,14 +256,13 @@ def _copy_meter_readings_simple(template_data, new_monthly_data, target_dc):
             template_mp = template_reading.meter_point
             # Create a new meter point for target DC based on template structure
             new_mp = MeterPoint.objects.create(
-                distribution_center=target_dc,
-                name=template_mp.name,
-                source_type=template_mp.source_type,
-                voltage_level=template_mp.voltage_level,
-                multiplying_factor=template_mp.multiplying_factor,
-                is_single_reading=template_mp.is_single_reading,
-                is_active=True
-            )
+            distribution_center=target_dc,
+            name=template_mp.name,
+            source_type=template_mp.source_type,
+            voltage_level=template_mp.voltage_level,
+            multiplying_factor=template_mp.multiplying_factor,
+            is_active=True
+        )
             
             # Create reading for the new meter point
             MeterReading.objects.create(

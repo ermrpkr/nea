@@ -2838,7 +2838,8 @@ class ProvincialReportCreateView(LoginRequiredMixin, View):
 
             # Month-specific report (always the selected month)
             month_report = LossReport.objects.filter(
-                distribution_center=dc, fiscal_year=fy, month=month, status='APPROVED'
+                distribution_center=dc, fiscal_year=fy, month=month,
+                status='APPROVED'
             ).first()
 
             # For cumulative calculation always use Shrawan → selected month
