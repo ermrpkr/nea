@@ -1,0 +1,203 @@
+{% extends 'nea_loss/base.html' %}
+{% load nea_filters %}
+{% block title %}Analytics — NEA{% endblock %}
+{% block page_title %}Analytics & Insights{% endblock %}
+{% block breadcrumb %}Analytics &rsaquo; Loss Overview{% endblock %}
+
+{% block content %}
+{% if not active_fy %}
+<div class="card" style="text-align:center;padding:60px;">
+  <div style="font-size:48px;margin-bottom:16px;">📅</div>
+  <div style="font-size:18px;font-weight:600;margin-bottom:8px;">No Active Fiscal Year</div>
+  <div style="color:var(--text-muted);font-size:14px;">Please configure an active fiscal year to view analytics.</div>
+</div>
+{% elif not dc_data and not monthly_trend %}
+<div class="card" style="text-align:center;padding:60px;">
+  <div style="font-size:48px;margin-bottom:16px;">📊</div>
+  <div style="font-size:18px;font-weight:600;margin-bottom:8px;">No Approved Data Yet</div>
+  <div style="color:var(--text-muted);font-size:14px;">Analytics will populate once DC reports are approved. No placeholder data is shown.</div>
+</div>
+{% else %}
+
+<div class="stat-grid mb-24">
+  <div class="stat-card blue">
+    <div class="icon"><i class="fas fa-bolt"></i></div>
+    <div class="label">Total Energy Received</div>
+    <div class="value">{{ total_received|floatformat:0 }}</div>
+    <div class="sub">kWh — FY {{ active_fy.year_bs }}</div>
+  </div>
+  <div class="stat-card red">
+    <div class="icon"><i class="fas fa-exclamation-triangle"></i></div>
+    <div class="label">Total Energy Loss</div>
+    <div class="value">{{ total_loss|floatformat:0 }}</div>
+    <div class="sub">kWh across all DCs</div>
+  </div>
+  {% if total_received %}
+  <div class="stat-card {% if total_received > 0 and total_loss|floatformat:0 != '0' %}red{% else %}green{% endif %}">
+    <div class="icon"><i class="fas fa-percent"></i></div>
+    <div class="label">Overall Loss %</div>
+    <div class="value">
+      {% if total_received > 0 %}
+        {% widthratio total_loss total_received 10000 as loss_bp %}
+        {{ loss_bp|floatformat:2 }}%
+      {% else %}0%{% endif %}
+    </div>
+    <div class="sub">Target: {{ target_pct }}%</div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="grid-2 mb-24">
+  {% if dc_data %}
+  <div class="card">
+    <div class="card-header"><h2><i class="fas fa-chart-bar" style="color:var(--nea-blue-mid);margin-right:8px;"></i>Loss by Distribution Center</h2></div>
+    <div class="card-body">
+      <div style="height:320px; position:relative;"><canvas id="dcChart"></canvas></div>
+    </div>
+  </div>
+  {% endif %}
+  {% if monthly_trend %}
+  <div class="card">
+    <div class="card-header"><h2><i class="fas fa-chart-line" style="color:var(--nea-red);margin-right:8px;"></i>Monthly Loss Trend</h2></div>
+    <div class="card-body">
+      <div style="height:320px; position:relative;"><canvas id="trendChart"></canvas></div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- DC Loss Table -->
+{% if dc_data %}
+<div class="card">
+  <div class="card-header"><h2>Distribution Center Loss Summary</h2></div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Distribution Center</th>
+          <th class="text-right">Total Received (kWh)</th>
+          <th class="text-right">Total Loss (kWh)</th>
+          <th class="text-right">Loss %</th>
+          <th>vs Target</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for dc in dc_data %}
+        {% if dc.total_received %}
+        {% widthratio dc.total_loss dc.total_received 10000 as dc_loss_bp %}
+        <tr>
+          <td style="color:var(--text-muted);">{{ forloop.counter }}</td>
+          <td><strong>{{ dc.distribution_center__name }}</strong></td>
+          <td class="text-right">{{ dc.total_received|floatformat:2 }}</td>
+          <td class="text-right" style="color:var(--nea-red);">{{ dc.total_loss|floatformat:2 }}</td>
+          <td class="text-right"><strong>{{ dc_loss_bp|floatformat:2 }}%</strong></td>
+          <td>
+            <div class="progress-bar-wrap" style="width:80px;display:inline-block;">
+              <div class="progress-bar {% if dc_loss_bp > target_pct %}red{% else %}green{% endif %}"
+                   style="width:{% widthratio dc.total_loss dc.total_received 100 %}%;"></div>
+            </div>
+          </td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const dcData = {{ dc_data|safe }};
+const monthlyTrend = {{ monthly_trend|safe }};
+const targetPct = {{ target_pct }};
+
+// DC Loss Chart
+if (dcData.length > 0) {
+  const dcNames = dcData.map(d => d.distribution_center__name).filter(Boolean);
+  const dcLoss = dcData.map(d => d.total_loss ? parseFloat(d.total_loss) : 0);
+  const dcReceived = dcData.map(d => d.total_received ? parseFloat(d.total_received) : 0);
+  const dcLossPct = dcLoss.map((l, i) => dcReceived[i] > 0 ? parseFloat((l/dcReceived[i]*100).toFixed(4)) : 0);
+
+  const ctx = document.getElementById('dcChart');
+  if (ctx) {
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: dcNames,
+        datasets: [
+          {
+            label: 'Loss %',
+            data: dcLossPct,
+            backgroundColor: dcLossPct.map(v => v > targetPct ? 'rgba(192,57,43,0.8)' : 'rgba(39,174,96,0.8)'),
+            borderRadius: 4,
+          }
+        ]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => `Loss: ${ctx.parsed.x.toFixed(4)}%` } }
+        },
+        scales: {
+          x: {
+            grid: { color: '#F1F5F9' },
+            ticks: { font: {size:10}, callback: v => v.toFixed(2)+'%' },
+          },
+          y: { grid: { display: false }, ticks: { font: {size:10} } }
+        }
+      }
+    });
+  }
+}
+
+// Monthly Trend Chart
+const months = Object.keys(monthlyTrend);
+if (months.length > 0) {
+  const received = months.map(m => monthlyTrend[m].received);
+  const loss = months.map(m => monthlyTrend[m].loss);
+  const lossPct = months.map((m, i) => received[i] > 0 ? parseFloat((loss[i]/received[i]*100).toFixed(4)) : 0);
+
+  const ctx = document.getElementById('trendChart');
+  if (ctx) {
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: months,
+        datasets: [
+          {
+            label: 'Loss %',
+            data: lossPct,
+            borderColor: '#C0392B',
+            backgroundColor: 'rgba(192,57,43,0.08)',
+            fill: true, tension: 0.4, pointRadius: 5,
+            pointBackgroundColor: lossPct.map(v => v > targetPct ? '#C0392B' : '#1E8449'),
+            yAxisID: 'y',
+          },
+          {
+            label: `Target (${targetPct}%)`,
+            data: months.map(() => targetPct),
+            borderColor: '#F39C12', borderDash: [8,4],
+            fill: false, pointRadius: 0, yAxisID: 'y',
+          }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { font: {size:11}, usePointStyle: true } } },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: {size:11} } },
+          y: { grid: { color: '#F1F5F9' }, ticks: { font: {size:11}, callback: v => v.toFixed(2)+'%' } }
+        }
+      }
+    });
+  }
+}
+</script>
+{% endblock %}

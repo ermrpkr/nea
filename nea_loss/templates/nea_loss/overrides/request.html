@@ -1,0 +1,155 @@
+{% extends "nea_loss/base.html" %}
+{% load static %}
+
+{% block title %}Request Report Override - {{ distribution_center.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-exclamation-triangle text-warning"></i> Report Override Request</h2>
+                <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left"></i> Back to Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0"><i class="fas fa-clipboard-list"></i> Request Override for Missing Months</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i> <strong>What is this for?</strong><br>
+                        If you experienced technical problems or system downtime that prevented you from submitting reports for consecutive months, you can request an override to resume reporting from a specific month. Previous approved reports will remain unchanged.
+                    </div>
+
+                    {% if missing_months %}
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Distribution Center</label>
+                            <input type="text" class="form-control" value="{{ distribution_center.name }}" readonly>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Fiscal Year</label>
+                            <input type="text" class="form-control" value="{{ fiscal_year.year_bs }}" readonly>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="resume_month" class="form-label fw-bold">Resume Reporting From *</label>
+                            <select class="form-select" id="resume_month" name="resume_month" required>
+                                <option value="">Select month to resume from...</option>
+                                {% for month_num, month_name in missing_months %}
+                                <option value="{{ month_num }}">{{ month_name }} ({{ month_num }})</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Select the month from which you want to resume creating reports. All months without existing reports are shown.</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="reason" class="form-label fw-bold">Reason for Override Request *</label>
+                            <textarea class="form-control" id="reason" name="reason" rows="4" required 
+                                      placeholder="Please explain why you were unable to submit reports for the missing months (e.g., technical problems, system downtime, equipment failure, etc.)"></textarea>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Optional: Specify Skip Range</label>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="skip_from_month" class="form-label">Skip From Month</label>
+                                    <select class="form-select" id="skip_from_month" name="skip_from_month">
+                                        <option value="">Select start month...</option>
+                                        {% for month_num, month_name in month_names.items %}
+                                        <option value="{{ month_num }}">{{ month_name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="skip_to_month" class="form-label">Skip To Month</label>
+                                    <select class="form-select" id="skip_to_month" name="skip_to_month">
+                                        <option value="">Select end month...</option>
+                                        {% for month_num, month_name in month_names.items %}
+                                        <option value="{{ month_num }}">{{ month_name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-text">Optional: Specify the exact range of months that were skipped.</div>
+                        </div>
+
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-warning">
+                                <i class="fas fa-paper-plane"></i> Submit Override Request
+                            </button>
+                            <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary">Cancel</a>
+                        </div>
+                    </form>
+                    {% else %}
+                    <div class="alert alert-success">
+                        <i class="fas fa-check-circle"></i> <strong>All months are up to date!</strong><br>
+                        You don't currently need any overrides. All your required reports have been submitted and approved.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0"><i class="fas fa-history"></i> Your Override Requests</h6>
+                </div>
+                <div class="card-body">
+                    {% if existing_overrides %}
+                    <div class="list-group list-group-flush">
+                        {% for override in existing_overrides %}
+                        <div class="list-group-item">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h6 class="mb-1">{{ override.get_resume_month_display }}</h6>
+                                    <p class="mb-1 small text-muted">{{ override.reason|truncatewords:15 }}</p>
+                                    <small class="text-muted">Requested: {{ override.created_at|date:"M d, Y" }}</small>
+                                </div>
+                                <div>
+                                    {% if override.status == 'PENDING' %}
+                                    <span class="badge bg-warning">Pending</span>
+                                    {% elif override.status == 'APPROVED' %}
+                                    <span class="badge bg-success">Approved</span>
+                                    {% elif override.status == 'REJECTED' %}
+                                    <span class="badge bg-danger">Rejected</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-muted">No override requests found.</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="card mt-3">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0"><i class="fas fa-question-circle"></i> How it Works</h6>
+                </div>
+                <div class="card-body">
+                    <ol class="small">
+                        <li>You request an override for the month you want to resume reporting</li>
+                        <li>System administrators review your request</li>
+                        <li>If approved, you can create reports from that month onwards</li>
+                        <li>Previous approved reports remain unchanged</li>
+                        <li>All actions are logged for audit purposes</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

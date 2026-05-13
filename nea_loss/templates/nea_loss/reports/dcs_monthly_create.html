@@ -1,0 +1,614 @@
+{% extends 'nea_loss/base.html' %}
+{% load nea_filters %}
+{% block title %}Create DCS Monthly Report — NEA{% endblock %}
+{% block page_title %}Create Monthly DCS Report{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; DCS Report &rsaquo; Create{% endblock %}
+
+{% block content %}
+<style>
+.section-heading {
+  background: var(--nea-blue);
+  color: white;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px 8px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.meter-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.meter-table th {
+  background: #F7FAFC; padding: 8px 12px; font-weight: 600; font-size: 11px;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border-color); text-align: center;
+}
+.meter-table td { padding: 6px 10px; border-bottom: 1px solid #F1F5F9; vertical-align: middle; font-size: 11px; }
+.meter-table tr:last-child td { border-bottom: none; }
+.meter-table tr:hover td { background: #FAFCFF; }
+.total-row td { background: #EBF5FB; font-weight: 700; }
+@media print {
+  body * { visibility: hidden !important; }
+  .dcs-comprehensive-report, .dcs-comprehensive-report * { visibility: visible !important; }
+  .dcs-comprehensive-report * { visibility: visible !important; }
+  .dcs-comprehensive-report { 
+    position: absolute !important; 
+    top: 0 !important; 
+    left: 0 !important; 
+    width: 100% !important; 
+    border: none !important; 
+    box-shadow: none !important; 
+    border-radius: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .dcs-comprehensive-report .alert {
+    display: none !important;
+  }
+  .dcs-comprehensive-report button {
+    display: none !important;
+  }
+}
+</style>
+
+<div class="alert alert-info mb-24" style="display:flex;align-items:center;gap:10px;">
+  <i class="fas fa-magic fa-lg"></i>
+  <span>
+    Select a <strong>Fiscal Year</strong> for your distribution center: <strong>{{ distribution_center.name }}</strong>.
+    Choose <strong>"Report Till Now"</strong> to see all months with data from Shrawan to latest.
+    Or choose a specific month to see only that month.
+  </span>
+</div>
+
+<div class="card mb-24">
+  <div class="card-header">
+    <h2><i class="fas fa-filter" style="color:var(--nea-blue);margin-right:6px;"></i> Generate Report</h2>
+  </div>
+  <div class="card-body">
+    <form method="POST">
+      {% csrf_token %}
+      <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:16px;align-items:flex-end;">
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Fiscal Year *</label>
+          <select name="fiscal_year" class="form-control" required>
+            <option value="">-- Select FY --</option>
+            {% for fy in fiscal_years %}
+            <option value="{{ fy.pk }}" {% if selected_fy and selected_fy.pk == fy.pk %}selected{% endif %}>
+              {{ fy.year_bs }}{% if fy.is_active %} (Active){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Month *</label>
+          <select name="month" class="form-control" required>
+            <option value="0" {% if selected_month == 0 %}selected{% endif %}>
+              Report Till Now (all available months)
+            </option>
+            {% for num, name in months_list %}
+            <option value="{{ num }}" {% if selected_month == num %}selected{% endif %}>{{ name }} only</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;padding-bottom:16px;">
+          <button type="submit" name="action" value="preview" class="btn btn-primary">
+            <i class="fas fa-eye"></i> Create Report
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if report_data %}
+<div class="dcs-comprehensive-report">
+  <!-- Report Header -->
+  <div style="background:linear-gradient(135deg,#1B4F72,#2E86C1);color:white;padding:20px;text-align:center;border-radius:12px 12px 0 0;margin-bottom:20px;">
+    <div style="font-size:12px;opacity:0.8;margin-bottom:4px;font-weight:500;letter-spacing:0.5px;">Nepal Electricity Authority</div>
+    <div style="font-size:16px;font-weight:700;margin-bottom:2px;">Distribution and Consumer Services Directorate</div>
+    <div style="font-size:14px;font-weight:600;margin-bottom:6px;">{{ distribution_center.name }}</div>
+    <div style="font-size:12px;opacity:0.75;">
+      Statement of Distribution Loss — F/Y {{ selected_fy.year_bs }}
+      {% if show_all %} — Shrawan to {{ months_range|last|get_month_name }}{% else %} — {{ selected_month_name }} only{% endif %}
+    </div>
+    <div style="font-size:11px;opacity:0.6;margin-top:4px;">NEA Overall Target: {{ nea_target_pct }}%</div>
+  </div>
+
+  <!-- Summary Section -->
+  <div class="card mb-20">
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;">
+        <div style="text-align:center;padding:12px;background:#F0F9FF;border-radius:8px;">
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Total Received (kWh)</div>
+          <div style="font-size:20px;font-weight:800;color:var(--nea-blue);">{{ grand_total_received|floatformat:2 }}</div>
+        </div>
+        <div style="text-align:center;padding:12px;background:#F0FFF4;border-radius:8px;">
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Total Utilised (kWh)</div>
+          <div style="font-size:20px;font-weight:800;color:var(--nea-green);">{{ grand_total_utilised|floatformat:2 }}</div>
+        </div>
+        <div style="text-align:center;padding:12px;background:#FEF2F2;border-radius:8px;">
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Total Loss (kWh)</div>
+          <div style="font-size:20px;font-weight:800;color:var(--nea-red);">{{ grand_total_received|add:grand_total_utilised|floatformat:2 }}</div>
+        </div>
+        <div style="text-align:center;padding:12px;background:#FFFBEB;border-radius:8px;">
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Loss %</div>
+          <div style="font-size:20px;font-weight:800;color:{% if grand_il > nea_target_pct %}var(--nea-red){% else %}var(--nea-green){% endif %};">{{ grand_il }}%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if show_all %}
+  <!-- REPORT TILL NOW: Consolidated View -->
+  <div class="card mb-20">
+    <div class="section-heading" style="background:#2E86C1;">
+      <i class="fas fa-calendar-check"></i> Consolidated Report — Shrawan to {{ months_range|last|get_month_name }}
+    </div>
+
+    <!-- Monthly Summary Table -->
+    <div style="padding:12px;background:#F8FAFC;border-bottom:1px solid var(--border-color);">
+      <div style="overflow-x:auto;">
+        <table class="meter-table">
+          <thead>
+            <tr>
+              <th style="text-align:left;">Month</th>
+              <th>Received (kWh)</th>
+              <th>Utilised (kWh)</th>
+              <th>Loss (kWh)</th>
+              <th>Loss %</th>
+              <th>Cumulative Loss %</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in report_data %}
+            <tr {% if forloop.even %}style="background:#FAFCFF;"{% endif %}>
+              <td style="font-weight:600;">{{ row.month_name }}</td>
+              <td style="text-align:right;">{{ row.total_received|floatformat:2 }}</td>
+              <td style="text-align:right;">{{ row.total_utilised|floatformat:2 }}</td>
+              <td style="text-align:right;">{{ row.total_loss|floatformat:2 }}</td>
+              <td style="text-align:right;font-weight:600;">{{ row.monthly_il|floatformat:4 }}%</td>
+              <td style="text-align:right;font-weight:700;color:var(--nea-blue);">{{ row.cumulative_il|floatformat:4 }}%</td>
+            </tr>
+            {% endfor %}
+            <tr class="total-row">
+              <td style="text-align:right;padding:8px 12px;">Grand Total:</td>
+              <td style="text-align:right;font-weight:700;">{{ grand_total_received|floatformat:2 }}</td>
+              <td style="text-align:right;font-weight:700;">{{ grand_total_utilised|floatformat:2 }}</td>
+              <td style="text-align:right;font-weight:700;">{{ grand_total_received|add:grand_total_utilised|floatformat:2 }}</td>
+              <td style="text-align:right;font-weight:700;">{{ grand_il|floatformat:4 }}%</td>
+              <td style="text-align:right;font-weight:700;color:var(--nea-blue);">{{ grand_il|floatformat:4 }}%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Consolidated Sections -->
+    <div style="padding:20px;">
+      <!-- Consolidated Import Data -->
+      <div style="margin-bottom:24px;">
+        <h4 style="color:#2E86C1;margin-bottom:12px;">Consolidated Energy Import</h4>
+        <div style="overflow-x:auto;">
+          <table class="meter-table">
+            <thead>
+              <tr>
+                <th style="text-align:left;width:200px;">Meter Point / Source</th>
+                <th style="text-align:left;width:60px;">Type</th>
+                {% for month in consolidated_months %}
+                <th style="text-align:center;min-width:80px;">{{ month }}</th>
+                {% endfor %}
+                <th style="text-align:center;font-weight:700;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for meter_name, data in consolidated_imports.items %}
+              <tr>
+                <td style="font-weight:500;">{{ data.meter_point.name }}</td>
+                <td><span style="background:#EBF5FB;padding:2px 6px;border-radius:4px;font-size:10px;">{{ data.meter_point.get_source_type_display|slice:":3" }}</span></td>
+                {% for month in consolidated_months %}
+                <td style="text-align:right;">
+                  {% with monthly_value=data.monthly_data|get_item:month %}
+                    {% if monthly_value and monthly_value > 0 %}
+                      {{ monthly_value|floatformat:2 }}
+                    {% else %}
+                      —
+                    {% endif %}
+                  {% endwith %}
+                </td>
+                {% endfor %}
+                <td style="text-align:right;font-weight:700;color:var(--nea-blue);">{{ data.total_units|floatformat:2 }}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="{{ consolidated_months|length|add:4 }}" style="text-align:center;color:var(--text-muted);padding:20px;">No import meter readings found</td></tr>
+              {% endfor %}
+                            {% if consolidated_imports %}
+              <tr class="total-row">
+                <td colspan="2" style="text-align:right;padding:8px 12px;">Grand Total:</td>
+                {% for month in consolidated_months %}
+                <td style="text-align:right;font-weight:700;">
+                  {% with monthly_total=import_monthly_totals|get_item:month %}
+                    {% if monthly_total and monthly_total > 0 %}
+                      {{ monthly_total|floatformat:2 }}
+                    {% else %}
+                      0.00
+                    {% endif %}
+                  {% endwith %}
+                </td>
+                {% endfor %}
+                <td style="text-align:right;font-weight:800;color:var(--nea-blue);">{{ import_grand_total|floatformat:2 }}</td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Consolidated Export Data -->
+      <div style="margin-bottom:24px;">
+        <h4 style="color:#E74C3C;margin-bottom:12px;">Consolidated Energy Export</h4>
+        <div style="overflow-x:auto;">
+          <table class="meter-table">
+            <thead>
+              <tr>
+                <th style="text-align:left;width:200px;">Meter Point / Source</th>
+                <th style="text-align:left;width:60px;">Type</th>
+                {% for month in consolidated_months %}
+                <th style="text-align:center;min-width:80px;">{{ month }}</th>
+                {% endfor %}
+                <th style="text-align:center;font-weight:700;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for meter_name, data in consolidated_exports.items %}
+              <tr>
+                <td style="font-weight:500;">{{ data.meter_point.name }}</td>
+                <td><span style="background:#FEF2F2;padding:2px 6px;border-radius:4px;font-size:10px;">{{ data.meter_point.get_source_type_display|slice:":3" }}</span></td>
+                {% for month in consolidated_months %}
+                <td style="text-align:right;">
+                  {% with monthly_value=data.monthly_data|get_item:month %}
+                    {% if monthly_value and monthly_value > 0 %}
+                      {{ monthly_value|floatformat:2 }}
+                    {% else %}
+                      —
+                    {% endif %}
+                  {% endwith %}
+                </td>
+                {% endfor %}
+                <td style="text-align:right;font-weight:700;color:var(--nea-red);">{{ data.total_units|floatformat:2 }}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="{{ consolidated_months|length|add:4 }}" style="text-align:center;color:var(--text-muted);padding:20px;">No export meter readings found</td></tr>
+              {% endfor %}
+              {% if consolidated_exports %}
+              <tr class="total-row">
+                <td colspan="2" style="text-align:right;padding:8px 12px;">Grand Total:</td>
+                {% for month in consolidated_months %}
+                <td style="text-align:right;font-weight:700;">
+                  {% with monthly_total=export_monthly_totals|get_item:month %}
+                    {% if monthly_total and monthly_total > 0 %}
+                      {{ monthly_total|floatformat:2 }}
+                    {% else %}
+                      0.00
+                    {% endif %}
+                  {% endwith %}
+                </td>
+                {% endfor %}
+                <td style="text-align:right;font-weight:800;color:var(--nea-red);">{{ export_grand_total|floatformat:2 }}</td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Consolidated Consumer Utilisation -->
+      <div style="margin-bottom:24px;">
+        <h4 style="color:#F39C12;margin-bottom:12px;">Consolidated Energy Utilisation</h4>
+        <div style="overflow-x:auto;">
+          <table class="meter-table">
+            <thead>
+              <tr>
+                <th style="text-align:left;width:30px;">S.No.</th>
+                <th style="text-align:left;width:200px;">Consumer Category</th>
+                {% for month in consolidated_months %}
+                <th style="text-align:center;min-width:80px;">{{ month }}</th>
+                {% endfor %}
+                <th style="text-align:center;font-weight:700;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for cat_name, data in consolidated_utilisation.items %}
+              <tr>
+                <td style="text-align:center;color:var(--text-muted);">{{ forloop.counter }}</td>
+                <td style="font-weight:500;">{{ data.category.name }}</td>
+                {% for month in consolidated_months %}
+                <td style="text-align:right;">
+                  {% with monthly_value=data.monthly_data|get_item:month %}
+                    {% if monthly_value and monthly_value > 0 %}
+                      {{ monthly_value|floatformat:2 }}
+                    {% else %}
+                      —
+                    {% endif %}
+                  {% endwith %}
+                </td>
+                {% endfor %}
+                <td style="text-align:right;font-weight:700;color:var(--nea-green);">{{ data.total_energy|floatformat:2 }}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="{{ consolidated_months|length|add:3 }}" style="text-align:center;color:var(--text-muted);padding:20px;">No consumer utilisation data found</td></tr>
+              {% endfor %}
+              {% if consolidated_utilisation %}
+              <tr class="total-row">
+                <td colspan="2" style="text-align:right;padding:8px 12px;">Grand Total:</td>
+                {% for month in consolidated_months %}
+                <td style="text-align:right;font-weight:700;">
+                  {% with monthly_total=utilisation_monthly_totals|get_item:month %}
+                    {% if monthly_total and monthly_total > 0 %}
+                      {{ monthly_total|floatformat:2 }}
+                    {% else %}
+                      0.00
+                    {% endif %}
+                  {% endwith %}
+                </td>
+                {% endfor %}
+                <td style="text-align:right;font-weight:800;color:var(--nea-green);">{{ utilisation_grand_total|floatformat:2 }}</td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Consolidated Consumer Count -->
+      <div>
+        <h4 style="color:#8E44AD;margin-bottom:12px;">Consolidated Consumer Count</h4>
+        <div style="overflow-x:auto;">
+          <table class="meter-table">
+            <thead>
+              <tr>
+                <th style="text-align:left;width:30px;">S.No.</th>
+                <th style="text-align:left;width:200px;">Consumer Category</th>
+                {% for month in consolidated_months %}
+                <th style="text-align:center;min-width:80px;">{{ month }}</th>
+                {% endfor %}
+                <th style="text-align:center;font-weight:700;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for cat_name, data in consolidated_counts.items %}
+              <tr>
+                <td style="text-align:center;color:var(--text-muted);">{{ forloop.counter }}</td>
+                <td style="font-weight:500;">{{ data.category.name }}</td>
+                {% for month in consolidated_months %}
+                <td style="text-align:right;">
+                  {% with monthly_value=data.monthly_data|get_item:month %}
+                    {% if monthly_value and monthly_value > 0 %}
+                      {{ monthly_value }}
+                    {% else %}
+                      —
+                    {% endif %}
+                  {% endwith %}
+                </td>
+                {% endfor %}
+                <td style="text-align:right;font-weight:700;color:var(--nea-purple);">{{ data.total_count }}</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="{{ consolidated_months|length|add:3 }}" style="text-align:center;color:var(--text-muted);padding:20px;">No consumer count data found</td></tr>
+              {% endfor %}
+              {% if consolidated_counts %}
+              <tr class="total-row">
+                <td colspan="2" style="text-align:right;padding:8px 12px;">Grand Total:</td>
+                {% for month in consolidated_months %}
+                <td style="text-align:right;font-weight:700;">
+                  {% with monthly_total=count_monthly_totals|get_item:month %}
+                    {% if monthly_total and monthly_total > 0 %}
+                      {{ monthly_total }}
+                    {% else %}
+                      0
+                    {% endif %}
+                  {% endwith %}
+                </td>
+                {% endfor %}
+                <td style="text-align:right;font-weight:800;color:var(--nea-purple);">{{ count_grand_total }}</td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% else %}
+  <!-- SPECIFIC MONTH: Individual Monthly Breakdown -->
+  {% for row in report_data %}
+  <div class="card mb-20">
+    <div class="section-heading">
+      <i class="fas fa-calendar-alt"></i> {{ row.month_name }} {{ selected_fy.year_bs }}
+    </div>
+    
+    <!-- Monthly Summary -->
+    <div style="padding:12px;background:#F8FAFC;border-bottom:1px solid var(--border-color);">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;font-size:11px;">
+        <div><strong>Received:</strong> {{ row.total_received|floatformat:2 }} kWh</div>
+        <div><strong>Utilised:</strong> {{ row.total_utilised|floatformat:2 }} kWh</div>
+        <div><strong>Loss:</strong> {{ row.total_loss|floatformat:2 }} kWh</div>
+        <div><strong>Loss %:</strong> <span style="color:{% if row.monthly_il > nea_target_pct %}var(--nea-red){% else %}var(--nea-green){% endif %};">{{ row.monthly_il|floatformat:4 }}%</span></div>
+      </div>
+    </div>
+
+    <!-- Section A: Energy Import -->
+    <div style="border-bottom:1px solid var(--border-color);">
+      <div class="section-heading" style="background:#2E86C1;">
+        <i class="fas fa-arrow-down"></i> Section A — Energy Import
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="meter-table">
+          <thead>
+            <tr>
+              <th style="text-align:left;width:200px;">Meter Point / Source</th>
+              <th style="text-align:left;width:60px;">Type</th>
+              <th>Present Reading</th>
+              <th>Previous Reading</th>
+              <th>Difference</th>
+              <th>M.F.</th>
+              <th>Unit (kWh)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for reading in row.import_readings %}
+            <tr>
+              <td style="font-weight:500;">{{ reading.meter_point.name }}</td>
+              <td><span style="background:#EBF5FB;padding:2px 6px;border-radius:4px;font-size:10px;">{{ reading.meter_point.get_source_type_display|slice:":3" }}</span></td>
+              <td style="text-align:right;">{{ reading.present_reading|floatformat:3 }}</td>
+              <td style="text-align:right;">{{ reading.previous_reading|floatformat:3 }}</td>
+              <td style="text-align:right;">{{ reading.difference|floatformat:3 }}</td>
+              <td style="text-align:right;">{{ reading.mf|floatformat:3 }}</td>
+              <td style="text-align:right;font-weight:600;">{{ reading.unit_kwh|floatformat:2 }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:20px;">No import meter readings found</td></tr>
+            {% endfor %}
+            <tr class="total-row">
+              <td colspan="6" style="text-align:right;padding:8px 12px;">Section Total:</td>
+              <td style="text-align:right;font-weight:700;color:var(--nea-blue);">{{ row.import_total|floatformat:2 }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Section B: Energy Export -->
+    <div style="border-bottom:1px solid var(--border-color);">
+      <div class="section-heading" style="background:#E74C3C;">
+        <i class="fas fa-arrow-up"></i> Section B — Energy Export
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="meter-table">
+          <thead>
+            <tr>
+              <th style="text-align:left;width:200px;">Meter Point / Source</th>
+              <th style="text-align:left;width:60px;">Type</th>
+              <th>Present Reading</th>
+              <th>Previous Reading</th>
+              <th>Difference</th>
+              <th>M.F.</th>
+              <th>Unit (kWh)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for reading in row.export_readings %}
+            <tr>
+              <td style="font-weight:500;">{{ reading.meter_point.name }}</td>
+              <td><span style="background:#FEF2F2;padding:2px 6px;border-radius:4px;font-size:10px;">{{ reading.meter_point.get_source_type_display|slice:":3" }}</span></td>
+              <td style="text-align:right;">{{ reading.present_reading|floatformat:3 }}</td>
+              <td style="text-align:right;">{{ reading.previous_reading|floatformat:3 }}</td>
+              <td style="text-align:right;">{{ reading.difference|floatformat:3 }}</td>
+              <td style="text-align:right;">{{ reading.mf|floatformat:3 }}</td>
+              <td style="text-align:right;font-weight:600;color:var(--nea-red);">{{ reading.unit_kwh|floatformat:2 }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:20px;">No export meter readings found</td></tr>
+            {% endfor %}
+            <tr class="total-row">
+              <td colspan="6" style="text-align:right;padding:8px 12px;">Section Total:</td>
+              <td style="text-align:right;font-weight:700;color:var(--nea-red);">{{ row.export_total|floatformat:2 }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Section C: Net Energy -->
+    <div style="border-bottom:1px solid var(--border-color);">
+      <div class="section-heading" style="background:#27AE60;">
+        <i class="fas fa-balance-scale"></i> Section C — Net Energy
+      </div>
+      <div style="padding:12px;background:#F0FFF4;">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;font-size:12px;">
+          <div><strong>Net Received:</strong> {{ row.import_total|add:row.export_total|floatformat:2 }} kWh</div>
+          <div><strong>Net Loss:</strong> {{ row.total_loss|floatformat:2 }} kWh</div>
+          <div><strong>Loss %:</strong> {{ row.monthly_il|floatformat:4 }}%</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section D: Energy Utilisation -->
+    <div style="border-bottom:1px solid var(--border-color);">
+      <div class="section-heading" style="background:#F39C12;">
+        <i class="fas fa-bolt"></i> Section D — Energy Utilisation
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="meter-table">
+          <thead>
+            <tr>
+              <th style="text-align:left;width:30px;">S.No.</th>
+              <th style="text-align:left;width:200px;">Consumer Category</th>
+              <th>Energy (kWh)</th>
+              <th style="text-align:left;">Remarks</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for utilisation in row.consumer_utilisations %}
+            <tr>
+              <td style="text-align:center;color:var(--text-muted);">{{ forloop.counter }}</td>
+              <td style="font-weight:500;">{{ utilisation.category.name }}</td>
+              <td style="text-align:right;font-weight:600;">{{ utilisation.energy_kwh|floatformat:2 }}</td>
+              <td>{{ utilisation.remarks|default:"—" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px;">No consumer utilisation data found</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Section E: Consumer Count -->
+    <div>
+      <div class="section-heading" style="background:#8E44AD;">
+        <i class="fas fa-users"></i> Section E — Consumer Count
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="meter-table">
+          <thead>
+            <tr>
+              <th style="text-align:left;width:30px;">S.No.</th>
+              <th style="text-align:left;width:200px;">Consumer Category</th>
+              <th>Count</th>
+              <th style="text-align:left;">Remarks</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for count in row.consumer_counts %}
+            <tr>
+              <td style="text-align:center;color:var(--text-muted);">{{ forloop.counter }}</td>
+              <td style="font-weight:500;">{{ count.category.name }}</td>
+              <td style="text-align:right;font-weight:600;">{{ count.count }}</td>
+              <td>{{ count.remarks|default:"—" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px;">No consumer count data found</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  <!-- Action Bar -->
+  <div class="card" style="margin-top:20px;">
+    <div style="padding:16px 20px;display:flex;gap:10px;justify-content:flex-end;align-items:center;">
+      <span style="font-size:12px;color:var(--text-muted);margin-right:auto;">
+        <i class="fas fa-info-circle"></i>
+        {{ distribution_center.name }}
+        {% if show_all %} — Shrawan to {{ months_range|last|get_month_name }}{% else %} — {{ selected_month_name }} only{% endif %}
+      </span>
+      <button onclick="window.print()" class="btn btn-outline btn-sm"><i class="fas fa-print"></i> Print</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

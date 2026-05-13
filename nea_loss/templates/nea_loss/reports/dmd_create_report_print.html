@@ -1,0 +1,180 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>DMD Comprehensive Report — {{ active_fy.year_bs }}</title>
+<style>
+  @page { size: A3 landscape; margin: 12mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 10px; color: #000; background: white; }
+
+  .report-header { text-align: center; margin-bottom: 10px; }
+  .report-header .org-name { font-size: 16px; font-weight: bold; color: #1B4F72; }
+  .report-header .directorate { font-size: 13px; font-weight: bold; margin-top: 2px; }
+  .report-header .report-title { font-size: 14px; font-weight: bold; margin-top: 4px; color: #C0392B; }
+  .report-header .fy { font-size: 11px; margin-top: 2px; }
+  .report-header .target { font-size: 10px; color: #C0392B; margin-top: 2px; }
+
+  .divider { border-top: 2px solid #1B4F72; margin: 6px 0; }
+
+  table { border-collapse: collapse; width: 100%; margin-bottom: 10px; }
+  th, td { border: 0.5px solid #999; padding: 3px 5px; }
+  th { background: #D6EAF8; font-weight: bold; font-size: 9.5px; text-align: center; }
+  td { font-size: 9.5px; }
+  .section-header td { background: #1B4F72; color: white; font-weight: bold; font-size: 10px; }
+  .sub-header td { background: #EBF5FB; font-weight: bold; }
+  .total-row td { background: #D5F5E3; font-weight: bold; }
+  .loss-row td { background: #FADBD8; }
+  .province-row td { background: #D6EAF8; font-weight: bold; }
+  .office-row td { background: #EBF5FB; font-weight: bold; }
+  .num { text-align: right; }
+  .center { text-align: center; }
+  .label { text-align: left; }
+</style>
+</head>
+<body>
+
+<!-- REPORT HEADER -->
+<div class="report-header">
+  <div class="org-name">NEPAL ELECTRICITY AUTHORITY</div>
+  <div class="directorate">Distribution and Consumer Services Directorate</div>
+  <div class="report-title">DMD COMPREHENSIVE LOSS REPORT</div>
+  <div class="fy">FY {{ active_fy.year_bs }} — {{ month_name }}</div>
+  <div class="target">NEA Target: {{ nea_target_pct }}%</div>
+</div>
+
+<div class="divider"></div>
+
+<!-- OVERALL SUMMARY TABLE -->
+<table>
+  <thead>
+    <tr class="section-header">
+      <td colspan="7">OVERALL SUMMARY — FY {{ active_fy.year_bs }}</td>
+    </tr>
+    <tr class="sub-header">
+      <th>Description</th>
+      <th>Total Provinces</th>
+      <th>Total Offices</th>
+      <th>Total DCs</th>
+      <th>Total Received (kWh)</th>
+      <th>Total Utilised (kWh)</th>
+      <th>Overall Loss %</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="label">Summary</td>
+      <td class="center">{{ total_provinces }}</td>
+      <td class="center">{{ total_offices }}</td>
+      <td class="center">{{ total_dcs }}</td>
+      <td class="num">{{ grand_total_received|floatformat:2 }}</td>
+      <td class="num">{{ grand_total_utilised|floatformat:2 }}</td>
+      <td class="num {% if overall_loss_pct > nea_target_pct %}loss-row{% else %}total-row{% endif %}">
+        {{ overall_loss_pct }}%
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="divider"></div>
+
+<!-- PROVINCE-WISE DETAILED TABLE -->
+<table>
+  <thead>
+    <tr class="section-header">
+      <td colspan="7">PROVINCE-WISE DISTRIBUTION LOSS DETAILS</td>
+    </tr>
+    <tr class="sub-header">
+      <th style="width: 25px;">S.No</th>
+      <th style="width: 200px;">Province / Office / DC</th>
+      <th style="width: 80px;">Code</th>
+      <th style="width: 100px;">Received (kWh)</th>
+      <th style="width: 100px;">Utilised (kWh)</th>
+      <th style="width: 100px;">Loss (kWh)</th>
+      <th style="width: 80px;">Loss %</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for province in province_data %}
+    <!-- Province Header Row with Totals -->
+    <tr class="province-row">
+      <td class="center">{{ forloop.counter }}</td>
+      <td>{{ province.province.name }} ({{ province.office_count }} Offices, {{ province.dc_count }} DCs)</td>
+      <td></td>
+      <td class="num">{{ province.received|floatformat:2 }}</td>
+      <td class="num">{{ province.utilised|floatformat:2 }}</td>
+      <td class="num">{{ province.loss|floatformat:2 }}</td>
+      <td class="num {% if province.loss_pct > nea_target_pct %}loss-row{% else %}total-row{% endif %}">
+        {{ province.loss_pct }}%
+      </td>
+    </tr>
+
+    {% for office in province.offices %}
+    <!-- Office Header Row with Totals -->
+    <tr class="office-row">
+      <td></td>
+      <td>{{ office.office.name }} ({{ office.dc_count }} DCs)</td>
+      <td></td>
+      <td class="num">{{ office.received|floatformat:2 }}</td>
+      <td class="num">{{ office.utilised|floatformat:2 }}</td>
+      <td class="num">{{ office.loss|floatformat:2 }}</td>
+      <td class="num {% if office.loss_pct > nea_target_pct %}loss-row{% else %}total-row{% endif %}">
+        {{ office.loss_pct }}%
+      </td>
+    </tr>
+
+    <!-- DC Rows -->
+    {% for dc in office.dcs %}
+    <tr>
+      <td></td>
+      <td class="label">{{ dc.dc.name }}</td>
+      <td>{{ dc.dc.code }}</td>
+      <td class="num">{{ dc.received|floatformat:2 }}</td>
+      <td class="num">{{ dc.utilised|floatformat:2 }}</td>
+      <td class="num">{{ dc.loss|floatformat:2 }}</td>
+      <td class="num {% if dc.loss_pct > nea_target_pct %}loss-row{% else %}total-row{% endif %}">
+        {{ dc.loss_pct }}%
+      </td>
+    </tr>
+    {% endfor %}
+    {% endfor %}
+
+    {% if not forloop.last %}
+    <tr><td colspan="7" style="border:none; height: 10px;"></td></tr>
+    {% endif %}
+    {% endfor %}
+
+    <!-- Grand Total Row -->
+    <tr class="section-header">
+      <td colspan="7">GRAND TOTAL — ALL PROVINCES</td>
+    </tr>
+    <tr class="total-row">
+      <td></td>
+      <td class="label">Overall Total</td>
+      <td></td>
+      <td class="num">{{ grand_total_received|floatformat:2 }}</td>
+      <td class="num">{{ grand_total_utilised|floatformat:2 }}</td>
+      <td class="num">{{ grand_total_loss|floatformat:2 }}</td>
+      <td class="num {% if overall_loss_pct > nea_target_pct %}loss-row{% else %}total-row{% endif %}">
+        {{ overall_loss_pct }}%
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="divider"></div>
+
+<!-- FOOTER -->
+<div style="text-align:center; margin-top:20px; font-size:9px; color:#666;">
+  Generated on {{ generated_date|date:"Y-m-d H:i" }} | Fiscal Year: {{ active_fy.year_bs }} | Period: {{ month_name }}
+</div>
+
+<div style="text-align:center; margin-top:20px;">
+  <button onclick="window.print()" style="padding: 10px 20px; font-size: 12px; font-weight: bold; background: #1B4F72; color: white; border: none; border-radius: 4px; cursor: pointer;">
+    <i class="fas fa-print"></i> Print Report
+  </button>
+</div>
+
+</body>
+</html>

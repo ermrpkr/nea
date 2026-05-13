@@ -1,0 +1,215 @@
+{% extends 'nea_loss/base.html' %}
+{% load nea_filters %}
+{% block title %}Review: {{ report.provincial_office.name }} — Provincial Report{% endblock %}
+{% block page_title %}Review Provincial Report{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; Provincial Reports &rsaquo; {{ report.fiscal_year.year_bs }} &rsaquo; {{ month_name }}{% endblock %}
+
+{% block content %}
+<!-- Simple Report Header -->
+<div style="background:white; border-radius:8px; padding:20px; margin-bottom:20px; border:1px solid var(--border-color);">
+  <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:16px;">
+    <div>
+      <h2 style="font-size:18px; font-weight:600; margin-bottom:8px;">{{ report.provincial_office.name }}</h2>
+      <div style="font-size:13px; color:var(--text-secondary);">
+        Fiscal Year {{ report.fiscal_year.year_bs }} | {{ month_name }}
+      </div>
+      <div style="margin-top:8px;">
+        <span class="badge badge-{{ report.status|lower }}">{{ report.get_status_display }}</span>
+        <span style="margin-left:12px; font-size:12px; color:var(--text-muted);">
+          Target: {{ nea_target_pct }}%
+        </span>
+      </div>
+    </div>
+    
+    {% if can_approve and report.status == 'SUBMITTED_TO_DMD' %}
+    <div style="display:flex; gap:8px;">
+      <button onclick="document.getElementById('approve-modal').style.display='flex'" class="btn btn-success btn-sm">
+        <i class="fas fa-check"></i> Approve
+      </button>
+      <button onclick="document.getElementById('reject-modal').style.display='flex'" class="btn btn-danger btn-sm">
+        <i class="fas fa-times"></i> Reject
+      </button>
+    </div>
+    {% endif %}
+  </div>
+  
+  <!-- Key Metrics -->
+  <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px;">
+    <div style="text-align:center; padding:12px; background:#F8FAFC; border-radius:6px;">
+      <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">Total Distribution Centers</div>
+      <div style="font-size:20px; font-weight:600; color:var(--nea-blue);">{{ total_dcs }}</div>
+    </div>
+    <div style="text-align:center; padding:12px; background:#F8FAFC; border-radius:6px;">
+      <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">Monthly Loss %</div>
+      <div style="font-size:20px; font-weight:600; {% if grand_il > nea_target_pct %}color:var(--nea-red);{% else %}color:var(--nea-green);{% endif %}">
+        {{ grand_il }}%
+      </div>
+      <div style="font-size:11px; color:var(--text-muted);">Target: {{ nea_target_pct }}%</div>
+    </div>
+    <div style="text-align:center; padding:12px; background:#F8FAFC; border-radius:6px;">
+      <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">Reports Submitted</div>
+      <div style="font-size:20px; font-weight:600; color:var(--nea-green);">{{ total_submitted }}</div>
+    </div>
+    <div style="text-align:center; padding:12px; background:#F8FAFC; border-radius:6px;">
+      <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">Reports Not Submitted</div>
+      <div style="font-size:20px; font-weight:600; color:var(--nea-yellow);">{{ total_not_submitted }}</div>
+    </div>
+  </div>
+</div>
+
+<!-- Grand Total Summary -->
+<div style="background:white; border-radius:8px; padding:20px; margin-bottom:20px; border:1px solid var(--border-color);">
+  <h3 style="font-size:15px; font-weight:600; margin-bottom:16px;">Grand Total — {{ report.provincial_office.name }}</h3>
+  <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px;">
+    <div style="text-align:center; padding:12px; background:#F8FAFC; border-radius:6px;">
+      <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">Total Received</div>
+      <div style="font-size:20px; font-weight:600; color:var(--nea-blue);">{{ grand_total_received|floatformat:2 }}</div>
+      <div style="font-size:11px; color:var(--text-muted);">kWh</div>
+    </div>
+    <div style="text-align:center; padding:12px; background:#F8FAFC; border-radius:6px;">
+      <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">Total Utilised</div>
+      <div style="font-size:20px; font-weight:600; color:var(--nea-green);">{{ grand_total_utilised|floatformat:2 }}</div>
+      <div style="font-size:11px; color:var(--text-muted);">kWh</div>
+    </div>
+    <div style="text-align:center; padding:12px; background:#F8FAFC; border-radius:6px;">
+      <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">Total Loss</div>
+      <div style="font-size:20px; font-weight:600; color:var(--nea-red);">{{ grand_total_loss|floatformat:2 }}</div>
+      <div style="font-size:11px; color:var(--text-muted);">kWh</div>
+    </div>
+  </div>
+</div>
+
+<!-- DC-wise Data Table -->
+<div style="background:white; border-radius:8px; border:1px solid var(--border-color); overflow:hidden;">
+  <div style="padding:16px 20px; border-bottom:1px solid var(--border-color); background:#F8FAFC;">
+    <h3 style="font-size:15px; font-weight:600; margin:0;">Distribution Center Data</h3>
+  </div>
+  <div style="overflow-x:auto;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Distribution Center</th>
+          <th>Total Received (kWh)</th>
+          <th>Total Utilised (kWh)</th>
+          <th>Loss (kWh)</th>
+          <th>Loss %</th>
+          <th>Target %</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for dc_data in report_data %}
+        <tr>
+          <td style="font-weight:600;">{{ dc_data.dc.name }}</td>
+          <td>{{ dc_data.total_received|floatformat:2 }}</td>
+          <td>{{ dc_data.total_utilised|floatformat:2 }}</td>
+          <td>{{ dc_data.total_loss|floatformat:2 }}</td>
+          <td style="{% if dc_data.monthly_il > nea_target_pct %}color:var(--nea-red);{% else %}color:var(--nea-green);{% endif %}; font-weight:600;">
+            {{ dc_data.monthly_il|floatformat:4 }}%
+          </td>
+          <td>{{ dc_data.dc_target|default:"-" }}%</td>
+          <td>
+            {% if dc_data.report_status == 'APPROVED' %}
+              <span class="badge badge-approved">✓ Approved</span>
+            {% elif dc_data.report_status == 'NO_REPORT' %}
+              <span class="badge badge-rejected">✗ No Report</span>
+            {% else %}
+              <span class="badge badge-submitted">{{ dc_data.report_status }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" style="text-align:center; padding:40px; color:var(--text-muted);">
+            No distribution center data available
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Remarks -->
+{% if report.remarks %}
+<div style="background:white; border-radius:8px; padding:20px; margin-top:20px; border:1px solid var(--border-color);">
+  <h3 style="font-size:15px; font-weight:600; margin-bottom:12px;">Remarks</h3>
+  <div style="font-size:14px; color:var(--text-secondary); line-height:1.5;">{{ report.remarks }}</div>
+</div>
+{% endif %}
+
+<!-- Approval/Reject Modals -->
+<div id="approve-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+  <div style="background:white; border-radius:12px; padding:24px; width:400px; box-shadow:0 10px 40px rgba(0,0,0,0.2);">
+    <h3 style="margin-bottom:12px; color:var(--nea-green);">✅ Approve Provincial Report</h3>
+    <p style="font-size:13px; color:var(--text-secondary); margin-bottom:16px;">Approve provincial report for <strong>{{ report.provincial_office.name }}</strong>, FY {{ report.fiscal_year.year_bs }} - {{ month_name }}.</p>
+    <form method="POST" action="{% url 'dmd_approve_provincial_report' report.pk %}">
+      {% csrf_token %}
+      <div class="form-group">
+        <label class="form-label">Remarks (optional)</label>
+        <textarea name="remarks" class="form-control" rows="3" placeholder="Add approval remarks..."></textarea>
+      </div>
+      <div style="display:flex; gap:10px; margin-top:16px;">
+        <button type="submit" class="btn btn-success"><i class="fas fa-check"></i> Approve</button>
+        <button type="button" onclick="document.getElementById('approve-modal').style.display='none'" class="btn btn-outline">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="reject-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+  <div style="background:white; border-radius:12px; padding:24px; width:400px; box-shadow:0 10px 40px rgba(0,0,0,0.2);">
+    <h3 style="margin-bottom:12px; color:var(--nea-red);">❌ Reject Provincial Report</h3>
+    <p style="font-size:13px; color:var(--text-secondary); margin-bottom:16px;">Please provide a reason for rejection.</p>
+    <form method="POST" action="{% url 'dmd_reject_provincial_report' report.pk %}">
+      {% csrf_token %}
+      <div class="form-group">
+        <label class="form-label">Reason for Rejection <span style="color:var(--nea-red);">*</span></label>
+        <textarea name="remarks" class="form-control" rows="3" required placeholder="Explain why this provincial report is being rejected..."></textarea>
+      </div>
+      <div style="display:flex; gap:10px; margin-top:16px;">
+        <button type="submit" class="btn btn-danger"><i class="fas fa-times-circle"></i> Reject</button>
+        <button type="button" onclick="document.getElementById('reject-modal').style.display='none'" class="btn btn-outline">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+.badge-approved {
+  background: var(--nea-green-light);
+  color: var(--nea-green);
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.badge-rejected {
+  background: var(--nea-red-light);
+  color: var(--nea-red);
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.badge-submitted {
+  background: var(--nea-yellow-light);
+  color: var(--nea-yellow);
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+</style>
+{% endblock %}

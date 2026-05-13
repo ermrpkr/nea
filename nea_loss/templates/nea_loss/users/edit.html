@@ -1,0 +1,73 @@
+{% extends 'nea_loss/base.html' %}
+{% block title %}Edit User — NEA{% endblock %}
+{% block page_title %}Edit User: {{ edit_user.full_name }}{% endblock %}
+{% block breadcrumb %}Administration &rsaquo; Users &rsaquo; Edit{% endblock %}
+{% block content %}
+<div style="max-width:700px; margin:0 auto;">
+<div class="card">
+  <div class="card-header"><h2><i class="fas fa-user-edit" style="color:var(--nea-blue-mid);margin-right:8px;"></i>Edit User Account</h2></div>
+  <div class="card-body">
+    <form method="POST">
+      {% csrf_token %}
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <input type="text" name="full_name" class="form-control" value="{{ edit_user.full_name }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input type="email" name="email" class="form-control" value="{{ edit_user.email }}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Role</label>
+          <select name="role" class="form-control">
+            {% for val, label in role_choices %}
+            <option value="{{ val }}" {% if edit_user.role == val %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Phone</label>
+          <input type="text" name="phone" class="form-control" value="{{ edit_user.phone }}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Provincial Office</label>
+          <select name="provincial_office" class="form-control">
+            <option value="">— None —</option>
+            {% for po in provincial_offices %}
+            <option value="{{ po.pk }}" {% if edit_user.provincial_office_id == po.pk %}selected{% endif %}>{{ po.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Distribution Center</label>
+          <select name="distribution_center" class="form-control">
+            <option value="">— None —</option>
+            {% for dc in distribution_centers %}
+            <option value="{{ dc.pk }}" {% if edit_user.distribution_center_id == dc.pk %}selected{% endif %}>{{ dc.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Designation</label>
+        <input type="text" name="designation" class="form-control" value="{{ edit_user.designation }}">
+      </div>
+      <div class="form-group">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+          <input type="checkbox" name="is_active" {% if edit_user.is_active %}checked{% endif %}> Active Account
+        </label>
+      </div>
+      <div style="display:flex; gap:12px; margin-top:16px;">
+        <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Changes</button>
+        <a href="{% url 'user_list' %}" class="btn btn-outline">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+</div>
+{% endblock %}

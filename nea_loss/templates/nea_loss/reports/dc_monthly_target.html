@@ -1,0 +1,118 @@
+{% extends 'nea_loss/base.html' %}
+{% block title %}DC Monthly Targets — NEA{% endblock %}
+{% block page_title %}View Monthly Loss Targets{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; DC Monthly Targets{% endblock %}
+
+{% block content %}
+<div style="background:linear-gradient(135deg,#1B4F72,#2E86C1);border-radius:14px;padding:20px 28px;margin-bottom:24px;color:white;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+  <div>
+    <div style="font-size:12px;opacity:0.65;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Provincial Target Setting</div>
+    <div style="font-size:20px;font-weight:700;">Monthly Loss % Targets per DC</div>
+    <div style="font-size:13px;opacity:0.7;margin-top:4px;">
+      {% if active_fy %}Fiscal Year {{ active_fy.year_bs }}{% else %}No active fiscal year{% endif %}
+      &nbsp;|&nbsp; View target loss % for each DC and month. 
+    </div>
+  </div>
+  <div style="font-size:12px;opacity:0.75;text-align:right;">
+    <i class="fas fa-info-circle"></i> These targets are visible to DC users and appear in their Excel exports.
+    <br><strong>Note:</strong> Only system administrators can edit monthly targets.
+  </div>
+</div>
+
+{% if messages %}
+{% for msg in messages %}
+<div class="alert alert-{{ msg.tags }}" style="margin-bottom:16px;">{{ msg }}</div>
+{% endfor %}
+{% endif %}
+
+{% if not active_fy %}
+<div class="card" style="text-align:center;padding:48px;">
+  <div style="font-size:40px;margin-bottom:12px;">📅</div>
+  <div style="font-size:16px;font-weight:600;">No Active Fiscal Year</div>
+  <div style="color:var(--text-muted);font-size:13px;margin-top:8px;">Please set an active fiscal year before configuring targets.</div>
+</div>
+{% elif not dc_rows %}
+<div class="card" style="text-align:center;padding:48px;">
+  <div style="font-size:40px;margin-bottom:12px;">🏢</div>
+  <div style="font-size:16px;font-weight:600;">No Distribution Centers Found</div>
+  <div style="color:var(--text-muted);font-size:13px;margin-top:8px;">No DCs are assigned to your provincial office.</div>
+</div>
+{% else %}
+{% if dc_rows.0.can_edit %}
+<form method="POST">
+  {% csrf_token %}
+{% endif %}
+
+  {% for row in dc_rows %}
+  <div class="card mb-16" style="overflow:hidden;">
+    <div class="card-header" style="background:#F7FAFC;border-bottom:2px solid var(--nea-blue);">
+      <h2 style="color:var(--nea-blue);"><i class="fas fa-building" style="margin-right:8px;"></i>{{ row.dc.name }}</h2>
+      <span style="font-size:12px;color:var(--text-muted);">{{ row.dc.provincial_office.name }}</span>
+      {% if not row.can_edit %}<span style="margin-left:10px;font-size:11px;color:#6c757d;"><i class="fas fa-lock"></i> Read-only</span>{% endif %}
+    </div>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="background:#EBF5FB;">
+            {% for m_num, m_name in months %}
+            <th style="padding:10px 14px;font-weight:600;font-size:11px;color:var(--text-muted);text-align:center;text-transform:uppercase;letter-spacing:0.4px;border-bottom:1px solid var(--border-color);min-width:90px;">
+              {{ m_name }}
+            </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            {% for mt in row.month_targets %}
+            <td style="padding:10px 10px;text-align:center;border-bottom:1px solid #F1F5F9;">
+              <div style="position:relative;">
+                <input
+                  type="number"
+                  name="target_{{ row.dc.pk }}_{{ mt.month }}"
+                  value="{{ mt.target }}"
+                  min="0" max="100" step="0.001"
+                  placeholder="—"
+                  {% if not row.can_edit %}readonly style="background:#f8f9fa;border-color:#dee2e6;color:#6c757d;"{% endif %}
+                  style="width:80px;padding:7px 22px 7px 8px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;text-align:right;font-family:monospace;"
+                  {% if row.can_edit %}onchange="markChanged(this)"{% endif %}
+                >
+                <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text-muted);pointer-events:none;">%</span>
+              </div>
+            </td>
+            {% endfor %}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endfor %}
+
+  {% if dc_rows.0.can_edit %}
+  <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:8px;">
+    <a href="{% url 'dashboard' %}" class="btn btn-outline">Cancel</a>
+    <button type="submit" class="btn btn-primary" id="save-btn">
+      <i class="fas fa-save"></i> Save All Targets
+    </button>
+  </div>
+</form>
+{% else %}
+  <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:8px;">
+    <a href="{% url 'dashboard' %}" class="btn btn-outline">Back to Dashboard</a>
+  </div>
+{% endif %}
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function markChanged(el) {
+  el.style.borderColor = 'var(--nea-blue-mid)';
+  el.style.background = '#EBF5FB';
+}
+document.querySelector('form') && document.querySelector('form').addEventListener('submit', function() {
+  const btn = document.getElementById('save-btn');
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+  btn.disabled = true;
+});
+</script>
+{% endblock %}

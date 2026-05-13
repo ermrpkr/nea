@@ -1,0 +1,133 @@
+{% extends 'nea_loss/base.html' %}
+{% block title %}Approved Province Reports — NEA{% endblock %}
+{% block page_title %}Approved Province Reports{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; Province Reports (Approved){% endblock %}
+
+{% block content %}
+<div class="alert alert-info mb-24" style="display:flex;align-items:center;gap:10px;">
+  <i class="fas fa-check-circle fa-lg"></i>
+  <span>
+    These are <strong>DMD-approved provincial reports</strong> that are now visible to all authorized users.
+    Only reports that have been submitted by provincial offices and approved by the Deputy Managing Director are shown here.
+  </span>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2><i class="fas fa-file-invoice" style="color:var(--nea-green);margin-right:6px;"></i> Approved Province Reports</h2>
+  </div>
+  <div class="card-body">
+    {% if reports %}
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Provincial Office</th>
+            <th>Fiscal Year</th>
+            <th>Month</th>
+            <th>Status</th>
+            <th>Created By</th>
+            <th>DMD Approved By</th>
+            <th>Approval Date</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for report in reports %}
+          <tr>
+            <td>
+              <strong>{{ report.provincial_office.name }}</strong>
+            </td>
+            <td>{{ report.fiscal_year.year_bs }}</td>
+            <td>{{ report.get_month_display }}</td>
+            <td>
+              <span class="badge badge-approved">
+                <i class="fas fa-check-circle"></i> {{ report.get_status_display }}
+              </span>
+            </td>
+            <td>{{ report.created_by.full_name|default:"-" }}</td>
+            <td>{{ report.dmd_reviewed_by.full_name|default:"-" }}</td>
+            <td>
+              {% if report.dmd_reviewed_at %}
+                {{ report.dmd_reviewed_at|date:"Y-m-d H:i" }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td>
+              <div class="btn-group">
+                <a href="{% url 'provincial_report_detail' report.pk %}" class="btn btn-outline btn-sm">
+                  <i class="fas fa-eye"></i> View
+                </a>
+                <a href="{% url 'provincial_report_print' %}?fy={{ report.fiscal_year.pk }}&po={{ report.provincial_office.pk }}&month={{ report.month }}" class="btn btn-outline btn-sm">
+                  <i class="fas fa-print"></i> Print
+                </a>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="alert alert-warning">
+      <i class="fas fa-exclamation-triangle"></i>
+      No approved provincial reports found. Reports will appear here once they are submitted by provincial offices and approved by the DMD.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+.badge-approved {
+  background: var(--nea-green-light);
+  color: var(--nea-green);
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-group {
+  display: flex;
+  gap: 6px;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.data-table th {
+  background: #F8FAFC;
+  padding: 12px 8px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 2px solid var(--border-color);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.data-table td {
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+.data-table tr:hover {
+  background: #F8FAFC;
+}
+
+.table-responsive {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+</style>
+{% endblock %}

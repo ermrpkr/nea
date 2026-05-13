@@ -1,0 +1,374 @@
+{% load static %}
+{% load nea_filters %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Loss Report — {{ report.distribution_center.name }} — {{ report.fiscal_year.year_bs }}</title>
+<style>
+  @page { size: A3 landscape; margin: 12mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 10px; color: #000; background: white; }
+
+  .report-header { text-align: center; margin-bottom: 10px; }
+  .report-header .org-name { font-size: 16px; font-weight: bold; color: #1B4F72; }
+  .report-header .dc-name { font-size: 13px; font-weight: bold; margin-top: 2px; }
+  .report-header .report-title { font-size: 14px; font-weight: bold; margin-top: 4px; color: #C0392B; }
+  .report-header .fy { font-size: 11px; margin-top: 2px; }
+  .report-header .target { font-size: 10px; color: #C0392B; margin-top: 2px; }
+
+  .divider { border-top: 2px solid #1B4F72; margin: 6px 0; }
+
+  table { border-collapse: collapse; width: 100%; margin-bottom: 10px; }
+  th, td { border: 0.5px solid #999; padding: 3px 5px; }
+  th { background: #D6EAF8; font-weight: bold; font-size: 9.5px; text-align: center; }
+  td { font-size: 9.5px; }
+  .section-header td { background: #1B4F72; color: white; font-weight: bold; font-size: 10px; }
+  .sub-header td { background: #EBF5FB; font-weight: bold; }
+  .total-row td { background: #D5F5E3; font-weight: bold; }
+  .loss-row td { background: #FADBD8; }
+  .num { text-align: right; }
+  .label { text-align: left; }
+  .center { text-align: center; }
+
+  .summary-table { margin-bottom: 12px; }
+  .summary-table td { padding: 4px 6px; }
+
+  .footer { margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+  .footer-box { text-align: center; }
+  .footer-box .sig-line { border-top: 1px solid #000; margin: 40px 10px 4px; }
+  .footer-box .title { font-size: 10px; font-weight: bold; }
+  .footer-box .date { font-size: 9px; color: #555; }
+
+  .print-btn { position: fixed; top: 10px; right: 10px; padding: 8px 16px; background: #1B4F72; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; z-index: 999; }
+  @media print { .print-btn { display: none !important; } }
+  .page-break { page-break-after: always; }
+
+  /* Footer on every page for print */
+  @media print {
+    /* Footer at bottom of every page */
+    .footer-on-every-page {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      display: grid !important;
+      grid-template-columns: 1fr 1fr;
+      gap: 30px;
+      padding: 0 15px;
+      font-size: 7px;
+      z-index: 1000;
+      background: white;
+      padding-top: 3px;
+      height: 35px;
+    }
+    .footer-on-every-page .footer-box {
+      text-align: center;
+    }
+    .footer-on-every-page .sig-line {
+      border-top: 1px solid #000;
+      margin: 8px 5px 1px;
+    }
+    .footer-on-every-page .title {
+      font-size: 7px;
+      font-weight: bold;
+    }
+    .footer-on-every-page .date {
+      font-size: 6px;
+      color: #555;
+    }
+    /* We want the footer on every page, so hide the end-of-content footer. */
+    .footer {
+      display: none !important;
+    }
+
+    /* Add space at bottom to avoid overlap with fixed footer. */
+    body {
+      padding-bottom: 45px;
+    }
+  }
+  
+  /* Hide footer-on-every-page on screen, show regular footer */
+  @media screen {
+    .footer-on-every-page {
+      display: none !important;
+    }
+    .footer {
+      display: grid !important;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+    }
+  }
+</style>
+</head>
+<body>
+
+<button class="print-btn" onclick="window.print()">🖨️ Print / Save PDF</button>
+
+<!-- REPORT HEADER -->
+<div class="report-header">
+  <div class="org-name">Nepal Electricity Authority</div>
+  <div class="dc-name">{{ report.distribution_center.name }}, {{ report.distribution_center.provincial_office.name }}</div>
+  <div class="report-title">Loss Analysis Report</div>
+  <div class="fy">Fiscal Year: {{ report.fiscal_year.year_bs }}</div>
+  <div class="target">Cumulative Loss (%) Target: {{ report.fiscal_year.loss_target_percent }}%</div>
+</div>
+<div class="divider"></div>
+
+{% with months=report.monthly_data.all %}
+
+<!-- SUMMARY TABLE -->
+<table class="summary-table">
+  <thead>
+    <tr>
+      <th style="width:240px;" colspan="2">Particular</th>
+      {% for m in months %}<th>{{ m.month_name }}</th>{% endfor %}
+      <th>Total</th>
+      <th>Remarks</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr class="total-row">
+      <td colspan="2" class="label">Total Received Unit (kWh)</td>
+      {% for m in months %}<td class="num">{{ m.net_energy_received|floatformat:2 }}</td>{% endfor %}
+      <td class="num">{{ report.total_received_kwh|floatformat:2 }}</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td colspan="2" class="label">Total Utilised Unit (kWh)</td>
+      {% for m in months %}<td class="num">{{ m.total_energy_utilised|floatformat:2 }}</td>{% endfor %}
+      <td class="num">{{ report.total_utilised_kwh|floatformat:2 }}</td>
+      <td></td>
+    </tr>
+    <tr class="loss-row">
+      <td colspan="2" class="label">Loss Unit (kWh)</td>
+      {% for m in months %}<td class="num">{{ m.loss_unit|floatformat:2 }}</td>{% endfor %}
+      <td class="num">{{ report.total_loss_kwh|floatformat:2 }}</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td colspan="2" class="label">Monthly Loss Percentage</td>
+      {% for m in months %}<td class="num">{{ m.monthly_loss_percent|multiply:100|floatformat:6 }}</td>{% endfor %}
+      <td class="num">—</td>
+      <td></td>
+    </tr>
+    <tr style="background:#FEF9E7;">
+      <td colspan="2" class="label"><b>Cumulative Loss Percentage</b></td>
+      {% for m in months %}<td class="num"><b>{{ m.cumulative_loss_percent|multiply:100|floatformat:6 }}</b></td>{% endfor %}
+      <td class="num"><b>{{ report.cumulative_loss_percent|multiply:100|floatformat:6 }}</b></td>
+      <td></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- SECTION A: ENERGY IMPORT - DETAILED METER READINGS -->
+<table>
+  <thead>
+    <tr class="section-header"><td colspan="8">A. Energy Import - Detailed Meter Readings</td></tr>
+    <tr class="sub-header">
+      <th style="width:20px;">S.No</th>
+      <th style="width:200px;">Meter Point</th>
+      <th style="width:80px;">Month</th>
+      <th style="width:100px;">Previous Reading</th>
+      <th style="width:100px;">Present Reading</th>
+      <th style="width:100px;">Difference</th>
+      <th style="width:80px;">MF</th>
+      <th style="width:100px;">Unit (kWh)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for mp in report.distribution_center.meter_points.all %}
+    {% if mp.source_type in "SUBSTATION,FEEDER_11KV,FEEDER_33KV,INTERBRANCH,IPP,ENERGY_IMPORT" %}
+      {% for m in months %}
+        {% for reading in m.meter_readings.all %}
+          {% if reading.meter_point_id == mp.pk and reading.present_reading > 0 %}
+          <tr>
+            <td class="center">{{ forloop.parentloop.parentloop.counter }}</td>
+            <td class="label">{{ mp.name }}<br><span style="font-size:8px; color:#666;">{{ mp.get_source_type_display }}{% if mp.voltage_level %} — {{ mp.voltage_level }}{% endif %}</span></td>
+            <td class="center">{{ m.month_name }}</td>
+            <td class="num">{{ reading.previous_reading|floatformat:3 }}</td>
+            <td class="num">{{ reading.present_reading|floatformat:3 }}</td>
+            <td class="num">{{ reading.difference|floatformat:3 }}</td>
+            <td class="num">{{ reading.multiplying_factor|floatformat:3 }}</td>
+            <td class="num">{{ reading.unit_kwh|floatformat:2 }}</td>
+          </tr>
+          {% endif %}
+        {% endfor %}
+      {% endfor %}
+    {% endif %}
+    {% endfor %}
+    <tr class="total-row">
+      <td colspan="7" style="text-align:right; font-weight:bold;">Total Energy Import (kWh)</td>
+      {% for m in months %}<td class="num"><b>{{ m.total_energy_import|floatformat:2 }}</b></td>{% endfor %}
+    </tr>
+  </tbody>
+</table>
+
+<!-- SECTION B: ENERGY EXPORT - DETAILED METER READINGS -->
+<table>
+  <thead>
+    <tr class="section-header"><td colspan="8">B. Energy Export - Detailed Meter Readings</td></tr>
+    <tr class="sub-header">
+      <th style="width:20px;">S.No</th>
+      <th style="width:200px;">Meter Point</th>
+      <th style="width:80px;">Month</th>
+      <th style="width:100px;">Previous Reading</th>
+      <th style="width:100px;">Present Reading</th>
+      <th style="width:100px;">Difference</th>
+      <th style="width:80px;">MF</th>
+      <th style="width:100px;">Unit (kWh)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for mp in report.distribution_center.meter_points.all %}
+    {% if mp.source_type in "EXPORT_DC,EXPORT_IPP,ENERGY_EXPORT" %}
+      {% for m in months %}
+        {% for reading in m.meter_readings.all %}
+          {% if reading.meter_point_id == mp.pk and reading.present_reading > 0 %}
+          <tr>
+            <td class="center">{{ forloop.parentloop.parentloop.counter }}</td>
+            <td class="label">{{ mp.name }}<br><span style="font-size:8px; color:#666;">{{ mp.get_source_type_display }}{% if mp.voltage_level %} — {{ mp.voltage_level }}{% endif %}</span></td>
+            <td class="center">{{ m.month_name }}</td>
+            <td class="num">{{ reading.previous_reading|floatformat:3 }}</td>
+            <td class="num">{{ reading.present_reading|floatformat:3 }}</td>
+            <td class="num">{{ reading.difference|floatformat:3 }}</td>
+            <td class="num">{{ reading.multiplying_factor|floatformat:3 }}</td>
+            <td class="num">{{ reading.unit_kwh|floatformat:2 }}</td>
+          </tr>
+          {% endif %}
+        {% endfor %}
+      {% endfor %}
+    {% endif %}
+    {% endfor %}
+    <tr class="total-row">
+      <td colspan="7" style="text-align:right; font-weight:bold;">Total Energy Export (kWh)</td>
+      {% for m in months %}<td class="num"><b>{{ m.total_energy_export|floatformat:2 }}</b></td>{% endfor %}
+    </tr>
+  </tbody>
+</table>
+
+<!-- SECTION C: NET RECEIVED -->
+<table>
+  <tbody>
+    <tr style="background:#D6EAF8; font-weight:bold;">
+      <td colspan="4" style="text-align:right;">C. Net Energy Received (kWh) = A − B</td>
+      {% for m in months %}<td class="num"><b>{{ m.net_energy_received|floatformat:2 }}</b></td>{% endfor %}
+      <td></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- SECTION D: ENERGY UTILISED -->
+<table>
+  <thead>
+    <tr class="section-header"><td colspan="{{ months|length|add:3 }}">D. Energy Utilised (kWh)</td></tr>
+    <tr class="sub-header">
+      <th>S.No.</th>
+      <th colspan="3" style="text-align:left;">Consumer Category</th>
+      {% for m in months %}<th>{{ m.month_name }}</th>{% endfor %}
+      <th>Change (Inc./Dec.)</th>
+      <th>Remarks</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for eu in months.0.energy_utilisations.all %}
+    <tr>
+      <td class="center">{{ forloop.counter }}</td>
+      <td colspan="3" class="label">{{ eu.consumer_category.name }}</td>
+      {% for m in months %}
+      {% for e in m.energy_utilisations.all %}
+      {% if e.consumer_category_id == eu.consumer_category_id %}
+      <td class="num">{{ e.energy_kwh|floatformat:2 }}</td>
+      {% endif %}
+      {% endfor %}
+      {% endfor %}
+      <td></td><td></td>
+    </tr>
+    {% endfor %}
+    <tr class="total-row">
+      <td colspan="4" style="text-align:right; font-weight:bold;">Grand Total:</td>
+      {% for m in months %}<td class="num"><b>{{ m.total_energy_utilised|floatformat:2 }}</b></td>{% endfor %}
+      <td></td><td></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- SECTION E: CONSUMER COUNT -->
+<table>
+  <thead>
+    <tr class="section-header"><td colspan="{{ months|length|add:3 }}">E. Consumer Count</td></tr>
+    <tr class="sub-header">
+      <th>S.No.</th>
+      <th colspan="3" style="text-align:left;">Consumer Category</th>
+      {% for m in months %}<th>{{ m.month_name }}</th>{% endfor %}
+      <th>Change</th>
+      <th>Remarks</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for cc in months.0.consumer_counts.all %}
+    <tr>
+      <td class="center">{{ forloop.counter }}</td>
+      <td colspan="3" class="label">{{ cc.consumer_category.name }}</td>
+      {% for m in months %}
+      {% for c in m.consumer_counts.all %}
+      {% if c.consumer_category_id == cc.consumer_category_id %}
+      <td class="num">{{ c.count }}</td>
+      {% endif %}
+      {% endfor %}
+      {% endfor %}
+      <td></td><td></td>
+    </tr>
+    {% endfor %}
+    <tr class="total-row">
+      <td colspan="4" style="text-align:right; font-weight:bold;">Grand Total:</td>
+      {% for m in months %}
+      <td class="num"><b>{% for c in m.consumer_counts.all %}{{ c.count|add:0 }}{% endfor %}</b></td>
+      {% endfor %}
+      <td></td><td></td>
+    </tr>
+  </tbody>
+</table>
+
+{% endwith %}
+
+<!-- FOOTER ON EVERY PAGE -->
+<div class="footer-on-every-page">
+  <div class="footer-box">
+    <div class="sig-line"></div>
+    <div class="title">Prepared By</div>
+    <div style="font-size:9px; margin-top:2px;">{{ report.created_by.full_name|default:"___________________" }}</div>
+    <div class="date">{{ report.created_by.designation|default:"DC Staff" }}</div>
+  </div>
+  <div class="footer-box">
+    <div class="sig-line"></div>
+    <div class="title">Checked By</div>
+    <div style="font-size:9px; margin-top:2px;">{{ report.reviewed_by.full_name|default:"___________________" }}</div>
+    <div class="date">DC Head</div>
+  </div>
+</div>
+
+<!-- FOOTER SIGNATURES (LAST PAGE ONLY) -->
+<div class="footer">
+  <div class="footer-box">
+    <div class="sig-line"></div>
+    <div class="title">Prepared By</div>
+    <div style="font-size:9px; margin-top:2px;">{{ report.created_by.full_name|default:"___________________" }}</div>
+    <div class="date">{{ report.created_by.designation|default:"DC Staff" }}</div>
+  </div>
+  <div class="footer-box">
+    <div class="sig-line"></div>
+    <div class="title">Checked By</div>
+    <div style="font-size:9px; margin-top:2px;">{{ report.reviewed_by.full_name|default:"___________________" }}</div>
+    <div class="date">DC Head</div>
+  </div>
+</div>
+
+<div style="text-align:center; margin-top:12px; font-size:9px; color:#999;">
+  Generated by NEA Loss Analysis System &nbsp;|&nbsp; {{ report.distribution_center.name }} &nbsp;|&nbsp; FY {{ report.fiscal_year.year_bs }}
+  {% if report.approval_date %}&nbsp;|&nbsp; Approved: {{ report.approval_date|date:"d M Y" }}{% endif %}
+</div>
+
+</body>
+<!-- No JS needed: footer is fixed via @media print -->
+</html>

@@ -1,0 +1,148 @@
+{% extends 'nea_loss/base.html' %}
+{% load nea_filters %}
+{% block title %}Review: {{ report.distribution_center.name }} — Loss Report{% endblock %}
+{% block page_title %}Review Report{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; {{ report.fiscal_year.year_bs }} &rsaquo; {{ report.get_month_display }}{% endblock %}
+
+{% block content %}
+<!-- Simple Report Header -->
+<div style="background:white; border-radius:8px; padding:20px; margin-bottom:20px; border:1px solid var(--border-color);">
+  <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:16px;">
+    <div>
+      <h2 style="font-size:18px; font-weight:600; margin-bottom:8px;">{{ report.distribution_center.name }}</h2>
+      <div style="font-size:13px; color:var(--text-secondary);">
+        {{ report.distribution_center.provincial_office.name }} | FY {{ report.fiscal_year.year_bs }} | {{ report.get_month_display }}
+      </div>
+      <div style="margin-top:8px;">
+        <span class="badge badge-{{ report.status|lower }}">{{ report.get_status_display }}</span>
+        <span style="margin-left:12px; font-size:12px; color:var(--text-muted);">
+          Target: {{ report.fiscal_year.loss_target_percent }}%
+        </span>
+      </div>
+    </div>
+    
+    {% if can_approve and report.status == 'SUBMITTED' %}
+    <div style="display:flex; gap:8px;">
+      <button onclick="document.getElementById('approve-modal').style.display='flex'" class="btn btn-success btn-sm">
+        <i class="fas fa-check"></i> Approve
+      </button>
+      <button onclick="document.getElementById('reject-modal').style.display='flex'" class="btn btn-danger btn-sm">
+        <i class="fas fa-times"></i> Reject
+      </button>
+    </div>
+    {% endif %}
+  </div>
+  
+  <!-- Key Metrics -->
+  <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px;">
+    <div style="text-align:center; padding:12px; background:#F8FAFC; border-radius:6px;">
+      <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">Total Received</div>
+      <div style="font-size:20px; font-weight:600; color:var(--nea-blue);">{{ report.total_received_kwh|floatformat:2 }}</div>
+      <div style="font-size:11px; color:var(--text-muted);">kWh</div>
+    </div>
+    <div style="text-align:center; padding:12px; background:#F8FAFC; border-radius:6px;">
+      <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">Total Utilised</div>
+      <div style="font-size:20px; font-weight:600; color:var(--nea-green);">{{ report.total_utilised_kwh|floatformat:2 }}</div>
+      <div style="font-size:11px; color:var(--text-muted);">kWh</div>
+    </div>
+    <div style="text-align:center; padding:12px; background:#F8FAFC; border-radius:6px;">
+      <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">Total Loss</div>
+      <div style="font-size:20px; font-weight:600; color:var(--nea-red);">{{ report.total_loss_kwh|floatformat:2 }}</div>
+      <div style="font-size:11px; color:var(--text-muted);">kWh</div>
+    </div>
+    <div style="text-align:center; padding:12px; background:#F8FAFC; border-radius:6px;">
+      <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">Cumulative Loss %</div>
+      <div style="font-size:20px; font-weight:600; {% if report.cumulative_loss_percent > report.fiscal_year.loss_target_percent|div:100 %}color:var(--nea-red);{% else %}color:var(--nea-green);{% endif %}">
+        {{ report.cumulative_loss_percent|multiply:100|floatformat:4 }}%
+      </div>
+      <div style="font-size:11px; color:var(--text-muted);">YTD</div>
+    </div>
+  </div>
+</div>
+
+<!-- Monthly Data Table -->
+<div style="background:white; border-radius:8px; border:1px solid var(--border-color); overflow:hidden;">
+  <div style="padding:16px 20px; border-bottom:1px solid var(--border-color); background:#F8FAFC;">
+    <h3 style="font-size:15px; font-weight:600; margin:0;">Monthly Data</h3>
+  </div>
+  <div style="overflow-x:auto;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Month</th>
+          <th>Net Received (kWh)</th>
+          <th>Total Utilised (kWh)</th>
+          <th>Loss (kWh)</th>
+          <th>Loss %</th>
+          <th>Cumulative Loss %</th>
+          <th>DC Target %</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for data in monthly_data %}
+        <tr>
+          <td>{{ data.get_month_display }}</td>
+          <td>{{ data.net_energy_received|floatformat:2 }}</td>
+          <td>{{ data.total_energy_utilised|floatformat:2 }}</td>
+          <td>{{ data.monthly_loss_kwh|floatformat:2 }}</td>
+          <td>{{ data.monthly_loss_percent|multiply:100|floatformat:4 }}%</td>
+          <td>{{ data.cumulative_loss_percent|multiply:100|floatformat:4 }}%</td>
+          <td>{{ dc_yearly_target|default:"-" }}%</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" style="text-align:center; padding:40px; color:var(--text-muted);">
+            No monthly data available
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Remarks -->
+{% if report.remarks %}
+<div style="background:white; border-radius:8px; padding:20px; margin-top:20px; border:1px solid var(--border-color);">
+  <h3 style="font-size:15px; font-weight:600; margin-bottom:12px;">Remarks</h3>
+  <div style="font-size:14px; color:var(--text-secondary); line-height:1.5;">{{ report.remarks }}</div>
+</div>
+{% endif %}
+
+<!-- Approval/Reject Modals -->
+<div id="approve-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+  <div style="background:white; border-radius:12px; padding:24px; width:400px; box-shadow:0 10px 40px rgba(0,0,0,0.2);">
+    <h3 style="margin-bottom:12px; color:var(--nea-green);">✅ Approve Report</h3>
+    <p style="font-size:13px; color:var(--text-secondary); margin-bottom:16px;">Approve report for <strong>{{ report.distribution_center.name }}</strong>, FY {{ report.fiscal_year.year_bs }}.</p>
+    <form method="POST" action="{% url 'report_approve' report.pk %}">
+      {% csrf_token %}
+      <div class="form-group">
+        <label class="form-label">Remarks (optional)</label>
+        <textarea name="remarks" class="form-control" rows="3" placeholder="Add approval remarks..."></textarea>
+      </div>
+      <div style="display:flex; gap:10px; margin-top:16px;">
+        <button type="submit" class="btn btn-success"><i class="fas fa-check"></i> Approve</button>
+        <button type="button" onclick="document.getElementById('approve-modal').style.display='none'" class="btn btn-outline">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="reject-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+  <div style="background:white; border-radius:12px; padding:24px; width:400px; box-shadow:0 10px 40px rgba(0,0,0,0.2);">
+    <h3 style="margin-bottom:12px; color:var(--nea-red);">❌ Reject Report</h3>
+    <p style="font-size:13px; color:var(--text-secondary); margin-bottom:16px;">Please provide a reason for rejection.</p>
+    <form method="POST" action="{% url 'report_reject' report.pk %}">
+      {% csrf_token %}
+      <div class="form-group">
+        <label class="form-label">Reason for Rejection <span style="color:var(--nea-red);">*</span></label>
+        <textarea name="remarks" class="form-control" rows="3" required placeholder="Explain why this report is being rejected..."></textarea>
+      </div>
+      <div style="display:flex; gap:10px; margin-top:16px;">
+        <button type="submit" class="btn btn-danger"><i class="fas fa-times-circle"></i> Reject</button>
+        <button type="button" onclick="document.getElementById('reject-modal').style.display='none'" class="btn btn-outline">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

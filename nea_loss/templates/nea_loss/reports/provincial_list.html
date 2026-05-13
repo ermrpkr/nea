@@ -1,0 +1,146 @@
+{% extends 'nea_loss/base.html' %}
+{% block title %}Provincial Reports — NEA{% endblock %}
+{% block page_title %}Provincial Reports{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; Provincial Reports{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+  <div style="font-size:13px;color:var(--text-muted);">
+    Consolidated monthly reports generated from DC data
+  </div>
+  <div style="display:flex;gap:10px;align-items:center;">
+    {% if can_create_provincial_report %}
+    <a href="{% url 'provincial_report_create' %}" class="btn btn-success">
+      <i class="fas fa-magic"></i> Create Monthly Report
+    </a>
+    {% endif %}
+    {% if user.is_top_management or user.is_system_admin %}
+    <a href="{% url 'province_reports_approved' %}" class="btn btn-primary">
+      <i class="fas fa-check-circle"></i> View Approved Reports
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Status Summary -->
+<div class="card mb-20" style="background:var(--card-bg);border:1px solid var(--border);">
+  <div class="card-body" style="padding:16px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+      <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:12px;color:var(--text-muted);">Total:</span>
+          <span style="font-weight:600;font-size:14px;">{{ status_counts.all }}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:12px;color:var(--text-muted);">Draft:</span>
+          <span style="font-weight:600;color:#6c757d;font-size:14px;">{{ status_counts.draft }}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:12px;color:var(--text-muted);">Pending DMD:</span>
+          <span style="font-weight:600;color:#17a2b8;font-size:14px;">{{ status_counts.pending }}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:12px;color:var(--text-muted);">DMD Approved:</span>
+          <span style="font-weight:600;color:#28a745;font-size:14px;">{{ status_counts.approved }}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:12px;color:var(--text-muted);">DMD Rejected:</span>
+          <span style="font-weight:600;color:#dc3545;font-size:14px;">{{ status_counts.rejected }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Status Filter -->
+<div class="card mb-20" style="background:var(--card-bg);border:1px solid var(--border);">
+  <div class="card-body" style="padding:12px 16px;">
+    <div style="display:flex;align-items:center;gap:15px;flex-wrap:wrap;">
+      <span style="font-weight:600;font-size:13px;">Filter by Status:</span>
+      <a href="?status=all" class="filter-btn {% if request.GET.status == 'all' or not request.GET.status %}active{% endif %}" style="padding:4px 12px;border-radius:4px;font-size:12px;text-decoration:none;background:var(--nea-blue);color:white;">All ({{ status_counts.all }})</a>
+      <a href="?status=DRAFT" class="filter-btn {% if request.GET.status == 'DRAFT' %}active{% endif %}" style="padding:4px 12px;border-radius:4px;font-size:12px;text-decoration:none;background:#6c757d;color:white;">Draft ({{ status_counts.draft }})</a>
+      <a href="?status=SUBMITTED_TO_DMD" class="filter-btn {% if request.GET.status == 'SUBMITTED_TO_DMD' %}active{% endif %}" style="padding:4px 12px;border-radius:4px;font-size:12px;text-decoration:none;background:#17a2b8;color:white;">Pending DMD ({{ status_counts.pending }})</a>
+      <a href="?status=DMD_APPROVED" class="filter-btn {% if request.GET.status == 'DMD_APPROVED' %}active{% endif %}" style="padding:4px 12px;border-radius:4px;font-size:12px;text-decoration:none;background:#28a745;color:white;">DMD Approved ({{ status_counts.approved }})</a>
+      <a href="?status=DMD_REJECTED" class="filter-btn {% if request.GET.status == 'DMD_REJECTED' %}active{% endif %}" style="padding:4px 12px;border-radius:4px;font-size:12px;text-decoration:none;background:#dc3545;color:white;">DMD Rejected ({{ status_counts.rejected }})</a>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Provincial Office</th>
+          <th>Fiscal Year</th>
+          <th>Month</th>
+          <th>Status</th>
+          <th>Created By</th>
+          <th>Created At</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for report in reports %}
+        <tr {% if report.status == 'DMD_APPROVED' %}style="background-color: rgba(40, 167, 69, 0.05); border-left: 3px solid #28a745;"{% elif report.status == 'SUBMITTED_TO_DMD' %}style="background-color: rgba(23, 162, 184, 0.05);"{% endif %}>
+          <td style="color:var(--text-muted);font-size:12px;">{{ forloop.counter }}</td>
+          <td>
+            <div style="font-weight:600;">{{ report.provincial_office.name }}</div>
+            <div style="font-size:11px;color:var(--text-muted);">{{ report.provincial_office.code }}</div>
+          </td>
+          <td><span class="fy-badge" style="font-size:11px;">{{ report.fiscal_year.year_bs }}</span></td>
+          <td style="font-weight:600;">{{ report.get_month_display }}</td>
+          <td>
+            {% if report.status == 'DMD_APPROVED' %}
+              <span class="badge badge-success" style="background-color: #28a745; padding: 6px 10px; font-weight: 600;">
+                <i class="fas fa-check-circle"></i> DMD Approved
+              </span>
+            {% elif report.status == 'SUBMITTED_TO_DMD' %}
+              <span class="badge badge-info" style="background-color: #17a2b8; padding: 6px 10px;">
+                <i class="fas fa-clock"></i> Pending DMD
+              </span>
+            {% elif report.status == 'DMD_REJECTED' %}
+              <span class="badge badge-danger" style="background-color: #dc3545; padding: 6px 10px;">
+                <i class="fas fa-times-circle"></i> DMD Rejected
+              </span>
+            {% else %}
+              <span class="badge badge-secondary" style="background-color: #6c757d; padding: 6px 10px;">
+                <i class="fas fa-edit"></i> {{ report.get_status_display }}
+              </span>
+            {% endif %}
+          </td>
+          <td style="font-size:12px;color:var(--text-muted);">
+            {% if report.created_by %}{{ report.created_by.full_name }}{% else %}—{% endif %}
+          </td>
+          <td style="font-size:12px;color:var(--text-muted);">
+            {% if report.created_by %}{{ report.created_at|date:"Y-m-d H:i" }}{% else %}—{% endif %}
+          </td>
+          <td>
+            <div style="display:flex;gap:6px;">
+              <a href="{% url 'provincial_report_create' %}?fy={{ report.fiscal_year.pk }}&po={{ report.provincial_office.pk }}&month={{ report.month }}"
+                 class="btn btn-outline btn-sm btn-icon" title="View / Regenerate">
+                <i class="fas fa-eye"></i>
+              </a>
+              <button onclick="window.print()" class="btn btn-outline btn-sm btn-icon" title="Print">
+                <i class="fas fa-print"></i>
+              </button>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" style="text-align:center;padding:40px;color:var(--text-muted);">
+            <i class="fas fa-folder-open" style="font-size:32px;margin-bottom:12px;display:block;opacity:0.3;"></i>
+            No provincial reports found.
+            {% if can_create_provincial_report %}
+            <a href="{% url 'provincial_report_create' %}">Create the first one</a>.
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

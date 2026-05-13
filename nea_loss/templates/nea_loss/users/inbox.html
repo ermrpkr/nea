@@ -1,0 +1,107 @@
+{% extends 'nea_loss/base.html' %}
+{% block title %}Messages{% endblock %}
+{% block page_title %}Messages{% endblock %}
+{% block breadcrumb %}Messages{% endblock %}
+
+{% block content %}
+<div style="display:grid;grid-template-columns:340px 1fr;gap:20px;min-height:calc(100vh - 140px);">
+
+  <!-- LEFT: Messages List -->
+  <div>
+    <!-- Header -->
+    <div style="background:white;border:1px solid var(--border-color);border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 4px 16px rgba(0,0,0,0.08);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <div style="font-size:14px;font-weight:600;color:var(--nea-blue);"><i class="fas fa-envelope" style="margin-right:6px;"></i>Messages</div>
+        <a href="{% url 'message_compose' %}" class="btn btn-primary btn-sm">
+          <i class="fas fa-plus"></i> Compose
+        </a>
+      </div>
+      {% if unread_count %}
+      <div style="font-size:13px;color:var(--text-muted);">You have <strong style="color:var(--nea-red);">{{ unread_count }}</strong> unread message{{ unread_count|pluralize }}</div>
+      {% else %}
+      <div style="font-size:13px;color:var(--text-muted);">All messages read</div>
+      {% endif %}
+    </div>
+
+    <!-- Messages List -->
+    <div style="background:white;border:1px solid var(--border-color);border-radius:12px;padding:16px;box-shadow:0 4px 16px rgba(0,0,0,0.08);">
+      
+      <!-- Inbox Tab -->
+      <div style="margin-bottom:12px;">
+        <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Inbox</div>
+        {% if inbox %}
+        {% for message in inbox %}
+        {% if not message.is_read %}
+        <a href="{% url 'message_detail' message.pk %}" style="display:block;padding:12px 14px;border-radius:10px;border:1px solid var(--nea-blue);
+                   margin-bottom:8px;background:#EBF5FB;text-decoration:none;transition:all 0.1s;">
+        {% else %}
+        <a href="{% url 'message_detail' message.pk %}" style="display:block;padding:12px 14px;border-radius:10px;border:1px solid var(--border-color);
+                   margin-bottom:8px;background:white;text-decoration:none;transition:all 0.1s;">
+        {% endif %}
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            {% if not message.is_read %}
+            <span style="font-size:13px;font-weight:700;color:var(--nea-blue);">
+            {% else %}
+            <span style="font-size:13px;font-weight:500;color:var(--nea-blue);">
+            {% endif %}
+              {{ message.sender.full_name }}
+            </span>
+            <span style="font-size:11px;color:var(--text-muted);">{{ message.created_at|date:"d M, H:i" }}</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-dark);margin-bottom:4px;">{{ message.subject }}</div>
+          <div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ message.body|truncatechars:50 }}</div>
+        </a>
+        {% endfor %}
+        {% else %}
+        <div style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px;">
+          <i class="fas fa-inbox" style="font-size:24px;margin-bottom:8px;opacity:0.5;"></i>
+          <div>No messages in inbox</div>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Sent Tab -->
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Sent</div>
+        {% if sent %}
+        {% for message in sent %}
+        <a href="{% url 'message_detail' message.pk %}" style="display:block;padding:12px 14px;border-radius:10px;border:1px solid var(--border-color);
+                   margin-bottom:8px;background:white;text-decoration:none;transition:all 0.1s;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            <span style="font-size:13px;font-weight:500;color:var(--nea-green);">
+              To: {{ message.recipient.full_name }}
+            </span>
+            <span style="font-size:11px;color:var(--text-muted);">{{ message.created_at|date:"d M, H:i" }}</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-dark);margin-bottom:4px;">{{ message.subject }}</div>
+          <div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ message.body|truncatechars:50 }}</div>
+        </a>
+        {% endfor %}
+        {% else %}
+        <div style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px;">
+          <i class="fas fa-paper-plane" style="font-size:24px;margin-bottom:8px;opacity:0.5;"></i>
+          <div>No sent messages</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Message Detail (if selected) -->
+  <div>
+    <div style="background:white;border:1px solid var(--border-color);border-radius:12px;padding:24px;box-shadow:0 4px 16px rgba(0,0,0,0.08);height:100%;display:flex;align-items:center;justify-content:center;">
+      <div style="text-align:center;color:var(--text-muted);">
+        <i class="fas fa-envelope-open-text" style="font-size:48px;margin-bottom:16px;opacity:0.5;"></i>
+        <div style="font-size:16px;font-weight:600;margin-bottom:8px;">Select a message</div>
+        <div style="font-size:13px;">Choose a message from the list to view its contents</div>
+        <div style="margin-top:16px;">
+          <a href="{% url 'message_compose' %}" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Compose New Message
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

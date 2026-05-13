@@ -1,0 +1,230 @@
+{% extends 'nea_loss/base.html' %}
+{% block title %}DMD Create Report — NEA{% endblock %}
+{% block page_title %}DMD Comprehensive Report{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; DMD Report{% endblock %}
+
+{% block content %}
+<div class="alert alert-info mb-24" style="display:flex;align-items:center;gap:10px;">
+  <i class="fas fa-file-medical-alt fa-lg"></i>
+  <span>
+    Comprehensive report showing <strong>all provinces</strong> and <strong>Distribution Centers (DCS)</strong> 
+    with overall NEA loss calculation for the active fiscal year.
+  </span>
+</div>
+
+<!-- Month Filter Card -->
+<div class="card mb-24">
+  <div class="card-header">
+    <h2><i class="fas fa-filter" style="color:var(--nea-blue);margin-right:6px;"></i> Filter by Month</h2>
+  </div>
+  <div class="card-body">
+    <form method="GET" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+      <div class="form-group" style="margin:0;min-width:250px;">
+        <label class="form-label">Select Month</label>
+        <select name="month" class="form-control" onchange="this.form.submit();">
+          {% for value, label in month_choices %}
+          <option value="{{ value }}" {% if selected_month == value %}selected{% endif %}>
+            {{ label }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div style="flex:1;">
+        <div style="font-size:13px;color:var(--text-muted);">
+          <i class="fas fa-info-circle"></i>
+          Currently showing: <strong>{{ month_name }}</strong> for F/Y {{ active_fy.year_bs }}
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Overall Summary Card -->
+<div class="card mb-24">
+  <div class="card-header">
+    <h2><i class="fas fa-chart-line" style="color:var(--nea-blue);margin-right:6px;"></i> Overall Summary — F/Y {{ active_fy.year_bs }}</h2>
+    <button onclick="generateReport()" class="btn btn-primary btn-sm">
+      <i class="fas fa-file-pdf"></i> Generate Report
+    </button>
+  </div>
+  <div class="card-body">
+    <div class="stat-grid">
+      <div class="stat-card blue">
+        <div class="icon"><i class="fas fa-globe-asia"></i></div>
+        <div class="label">Total Provinces</div>
+        <div class="value">{{ total_provinces }}</div>
+      </div>
+      <div class="stat-card green">
+        <div class="icon"><i class="fas fa-building"></i></div>
+        <div class="label">Total Offices</div>
+        <div class="value">{{ total_offices }}</div>
+      </div>
+      <div class="stat-card yellow">
+        <div class="icon"><i class="fas fa-bolt"></i></div>
+        <div class="label">Total DCs</div>
+        <div class="value">{{ total_dcs }}</div>
+      </div>
+      <div class="stat-card {% if overall_loss_pct > nea_target_pct %}red{% else %}green{% endif %}">
+        <div class="icon"><i class="fas fa-percentage"></i></div>
+        <div class="label">Overall NEA Loss %</div>
+        <div class="value">{{ overall_loss_pct }}%</div>
+        <div class="sub">Target: {{ nea_target_pct }}%</div>
+      </div>
+    </div>
+
+    <div class="grid-3 mt-24">
+      <div class="card" style="padding:20px;text-align:center;">
+        <div style="font-size:12px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Total Received (kWh)</div>
+        <div style="font-size:24px;font-weight:800;color:var(--nea-blue);">{{ grand_total_received|floatformat:2 }}</div>
+      </div>
+      <div class="card" style="padding:20px;text-align:center;">
+        <div style="font-size:12px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Total Utilised (kWh)</div>
+        <div style="font-size:24px;font-weight:800;color:var(--nea-green);">{{ grand_total_utilised|floatformat:2 }}</div>
+      </div>
+      <div class="card" style="padding:20px;text-align:center;">
+        <div style="font-size:12px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Total Loss (kWh)</div>
+        <div style="font-size:24px;font-weight:800;color:var(--nea-red);">{{ grand_total_loss|floatformat:2 }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Province-wise Details -->
+{% for province in province_data %}
+<div class="card mb-24">
+  <div class="card-header">
+    <h2>
+      <i class="fas fa-map-marker-alt" style="color:var(--nea-blue);margin-right:6px;"></i>
+      {{ province.province.name }}
+      <span style="font-size:13px;color:var(--text-muted);font-weight:400;margin-left:8px;">
+        {{ province.office_count }} Offices • {{ province.dc_count }} DCs
+      </span>
+    </h2>
+    <div style="display:flex;gap:12px;align-items:center;">
+      <div style="text-align:right;">
+        <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;">Loss %</div>
+        <div style="font-size:18px;font-weight:700;color:{% if province.loss_pct > nea_target_pct %}var(--nea-red){% else %}var(--nea-green){% endif %};">
+          {{ province.loss_pct }}%
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="card-body">
+    <!-- Office-wise breakdown -->
+    {% for office in province.offices %}
+    <div style="margin-bottom:20px;padding:16px;background:#F8FAFC;border-radius:8px;border:1px solid var(--border-color);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h3 style="font-size:14px;font-weight:600;color:var(--text-primary);margin:0;">
+          <i class="fas fa-building" style="color:var(--nea-blue-mid);margin-right:6px;"></i>
+          {{ office.office.name }}
+        </h3>
+        <div style="text-align:right;">
+          <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;">Loss %</div>
+          <div style="font-size:14px;font-weight:700;color:{% if office.loss_pct > nea_target_pct %}var(--nea-red){% else %}var(--nea-green){% endif %};">
+            {{ office.loss_pct }}%
+          </div>
+        </div>
+      </div>
+
+      <!-- DC Table -->
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>DC Name</th>
+              <th>Code</th>
+              <th>Received (kWh)</th>
+              <th>Utilised (kWh)</th>
+              <th>Loss (kWh)</th>
+              <th>Loss %</th>
+              <th>Reports</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for dc in office.dcs %}
+            <tr>
+              <td><strong>{{ dc.dc.name }}</strong></td>
+              <td>{{ dc.dc.code }}</td>
+              <td>{{ dc.received|floatformat:2 }}</td>
+              <td>{{ dc.utilised|floatformat:2 }}</td>
+              <td>{{ dc.loss|floatformat:2 }}</td>
+              <td style="color:{% if dc.loss_pct > nea_target_pct %}var(--nea-red){% else %}var(--nea-green){% endif %};font-weight:600;">
+                {{ dc.loss_pct }}%
+              </td>
+              <td>{{ dc.report_count }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="7" style="text-align:center;color:var(--text-muted);padding:20px;">
+                No active distribution centers found.
+              </td>
+            </tr>
+            {% endfor %}
+            <!-- Office Total -->
+            {% if office.dcs %}
+            <tr style="background:#EBF5FB;font-weight:700;">
+              <td colspan="2" style="color:var(--nea-blue);">Office Total</td>
+              <td>{{ office.received|floatformat:2 }}</td>
+              <td>{{ office.utilised|floatformat:2 }}</td>
+              <td>{{ office.loss|floatformat:2 }}</td>
+              <td style="color:{% if office.loss_pct > nea_target_pct %}var(--nea-red){% else %}var(--nea-green){% endif %};">
+                {{ office.loss_pct }}%
+              </td>
+              <td>{{ office.dc_count }}</td>
+            </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endfor %}
+
+    <!-- Province Total -->
+    <div style="margin-top:16px;padding:16px;background:linear-gradient(135deg,#1B4F72,#2E86C1);border-radius:8px;color:white;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-size:12px;opacity:0.8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Province Total — {{ province.province.name }}</div>
+          <div style="font-size:11px;opacity:0.7;margin-top:2px;">{{ province.office_count }} Offices • {{ province.dc_count }} DCs</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:11px;opacity:0.8;font-weight:600;text-transform:uppercase;">Overall Loss %</div>
+          <div style="font-size:20px;font-weight:800;">{{ province.loss_pct }}%</div>
+        </div>
+      </div>
+      <div class="grid-3 mt-16" style="margin-top:16px;">
+        <div style="text-align:center;">
+          <div style="font-size:10px;opacity:0.7;text-transform:uppercase;letter-spacing:0.5px;">Received</div>
+          <div style="font-size:16px;font-weight:700;">{{ province.received|floatformat:2 }}</div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:10px;opacity:0.7;text-transform:uppercase;letter-spacing:0.5px;">Utilised</div>
+          <div style="font-size:16px;font-weight:700;">{{ province.utilised|floatformat:2 }}</div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:10px;opacity:0.7;text-transform:uppercase;letter-spacing:0.5px;">Loss</div>
+          <div style="font-size:16px;font-weight:700;">{{ province.loss|floatformat:2 }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+<style>
+@media print {
+  .sidebar, .topbar, .btn { display: none !important; }
+  .main-content { margin: 0; padding: 0; }
+  .card { box-shadow: none; border: 1px solid #ccc; page-break-inside: avoid; }
+  .card-header { background: #f5f5f5 !important; -webkit-print-color-adjust: exact; }
+  body { background: white; }
+}
+</style>
+
+<script>
+function generateReport() {
+  const month = '{{ selected_month }}';
+  const url = '{% url "dmd_create_report_print" %}?month=' + month;
+  window.open(url, '_blank');
+}
+</script>
+{% endblock %}

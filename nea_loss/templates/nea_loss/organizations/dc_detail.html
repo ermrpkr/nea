@@ -1,0 +1,64 @@
+{% extends 'nea_loss/base.html' %}
+{% block title %}{{ dc.name }} — DC Detail{% endblock %}
+{% block page_title %}{{ dc.name }}{% endblock %}
+{% block breadcrumb %}Organization &rsaquo; {{ dc.provincial_office.name }} &rsaquo; {{ dc.name }}{% endblock %}
+{% block content %}
+<div class="grid-2 mb-24">
+  <div class="card">
+    <div class="card-header"><h2><i class="fas fa-building" style="color:var(--nea-blue-mid);margin-right:8px;"></i>DC Information</h2></div>
+    <div class="card-body">
+      <table style="width:100%; font-size:13.5px;">
+        <tr><td style="color:var(--text-muted); padding:6px 0; width:40%;">Name</td><td style="font-weight:600;">{{ dc.name }}</td></tr>
+        <tr><td style="color:var(--text-muted); padding:6px 0;">Code</td><td>{{ dc.code }}</td></tr>
+        <tr><td style="color:var(--text-muted); padding:6px 0;">Provincial Office</td><td>{{ dc.provincial_office.name }}</td></tr>
+        <tr><td style="color:var(--text-muted); padding:6px 0;">Province</td><td>{{ dc.provincial_office.province.name }}</td></tr>
+        {% if dc.address %}<tr><td style="color:var(--text-muted); padding:6px 0;">Address</td><td>{{ dc.address }}</td></tr>{% endif %}
+        {% if dc.contact %}<tr><td style="color:var(--text-muted); padding:6px 0;">Contact</td><td>{{ dc.contact }}</td></tr>{% endif %}
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h2><i class="fas fa-tachometer-alt" style="color:var(--nea-blue-mid);margin-right:8px;"></i>Meter Points ({{ meter_points.count }})</h2></div>
+    <div class="card-body" style="padding:0;">
+      <div style="max-height:220px; overflow-y:auto;">
+        {% for mp in meter_points %}
+        <div style="padding:10px 18px; border-bottom:1px solid #F1F5F9; display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <div style="font-size:13px; font-weight:500;">{{ mp.name }}</div>
+            <div style="font-size:11px; color:var(--text-muted);">{{ mp.get_source_type_display }}{% if mp.voltage_level %} · {{ mp.voltage_level }}{% endif %} · MF: {{ mp.multiplying_factor }}</div>
+          </div>
+          <span class="badge {% if mp.source_type in 'EXPORT_DC,EXPORT_IPP' %}badge-warning{% else %}badge-submitted{% endif %}" style="font-size:10px;">
+            {% if mp.source_type in "EXPORT_DC,EXPORT_IPP" %}Export{% else %}Import{% endif %}
+          </span>
+        </div>
+        {% empty %}
+        <div style="padding:20px; text-align:center; color:var(--text-muted); font-size:13px;">No meter points configured.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h2>Loss Reports History</h2>{% if can_create_loss_report %}<a href="{% url 'report_create' %}" class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> New Report</a>{% endif %}</div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th>Fiscal Year</th><th>Status</th><th class="text-right">Received (kWh)</th><th class="text-right">Loss (kWh)</th><th class="text-right">Loss %</th><th>Actions</th></tr></thead>
+      <tbody>
+        {% for r in reports %}
+        <tr>
+          <td>{{ r.fiscal_year.year_bs }}</td>
+          <td><span class="badge badge-{{ r.status|lower }}">{{ r.get_status_display }}</span></td>
+          <td class="text-right">{{ r.total_received_kwh|floatformat:2 }}</td>
+          <td class="text-right" style="color:var(--nea-red);">{{ r.total_loss_kwh|floatformat:2 }}</td>
+          <td class="text-right"><strong>{{ r.cumulative_loss_percent|multiply:100|floatformat:4 }}</strong></td>
+          <td><a href="{% url 'report_detail' r.pk %}" class="btn btn-outline btn-sm"><i class="fas fa-eye"></i> View</a></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" style="text-align:center; padding:24px; color:var(--text-muted);">No reports yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,99 @@
+{% extends 'nea_loss/base.html' %}
+{% block title %}{{ msg.subject }} — Messages{% endblock %}
+{% block page_title %}Messages{% endblock %}
+{% block breadcrumb %}Messages &rsaquo; {{ msg.subject|truncatechars:40 }}{% endblock %}
+
+{% block content %}
+<div style="display:grid;grid-template-columns:300px 1fr;gap:20px;">
+
+  <!-- Back + Actions -->
+  <div>
+    <a href="{% url 'message_inbox' %}" class="btn btn-outline" style="width:100%;margin-bottom:12px;display:block;text-align:center;">
+      <i class="fas fa-arrow-left"></i> Back to Inbox
+    </a>
+    <form method="POST" action="{% url 'message_delete' msg.pk %}" onsubmit="return confirm('Delete this message?')">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger" style="width:100%;">
+        <i class="fas fa-trash"></i> Delete
+      </button>
+    </form>
+
+    <!-- Quick compose to same person -->
+    <div style="margin-top:20px;background:white;border:1px solid var(--border-color);border-radius:10px;padding:16px;">
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px;">Quick Compose</div>
+      <form method="POST" action="{% url 'message_inbox' %}">
+        {% csrf_token %}
+        <input type="hidden" name="recipient" value="{% if msg.sender.pk == request.user.pk %}{{ msg.recipient.pk }}{% else %}{{ msg.sender.pk }}{% endif %}">
+        <div class="form-group">
+          <label class="form-label">To</label>
+          <input type="text" class="form-control" readonly
+                 value="{% if msg.sender.pk == request.user.pk %}{{ msg.recipient.full_name }}{% else %}{{ msg.sender.full_name }}{% endif %}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Subject</label>
+          <input type="text" name="subject" class="form-control" value="Re: {{ msg.subject }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Message</label>
+          <textarea name="body" class="form-control" rows="3" required placeholder="Write reply…"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;"><i class="fas fa-paper-plane"></i> Send</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Message Thread -->
+  <div>
+    <!-- Original message -->
+    <div style="background:white;border:1px solid var(--border-color);border-radius:12px;padding:24px;margin-bottom:16px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border-color);">
+        <div>
+          <div style="font-size:18px;font-weight:700;color:var(--nea-blue);margin-bottom:6px;">{{ msg.subject }}</div>
+          <div style="font-size:13px;color:var(--text-muted);">
+            <i class="fas fa-user" style="margin-right:5px;"></i>
+            <strong>From:</strong> {{ msg.sender.full_name }} ({{ msg.sender.get_role_display }})
+            &nbsp;&nbsp;
+            <strong>To:</strong> {{ msg.recipient.full_name }} ({{ msg.recipient.get_role_display }})
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">
+            <i class="fas fa-clock" style="margin-right:5px;"></i>{{ msg.created_at|date:"d M Y, H:i" }}
+          </div>
+        </div>
+        <span style="background:{% if msg.is_read %}#F0F4F8{% else %}#EBF5FB{% endif %};color:{% if msg.is_read %}var(--text-muted){% else %}var(--nea-blue){% endif %};padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;">
+          {% if msg.is_read %}Read{% else %}Unread{% endif %}
+        </span>
+      </div>
+      <div style="font-size:14px;line-height:1.7;color:var(--text-secondary);white-space:pre-wrap;">{{ msg.body }}</div>
+    </div>
+
+    <!-- Replies -->
+    {% for reply in replies %}
+    <div style="background:{% if reply.sender == request.user %}#F0F9FF{% else %}#F8FAFC{% endif %};
+                border:1px solid {% if reply.sender == request.user %}#D6EAF8{% else %}var(--border-color){% endif %};
+                border-radius:12px;padding:18px;margin-bottom:12px;
+                {% if reply.sender == request.user %}margin-left:40px{% else %}margin-right:40px{% endif %};">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="font-size:13px;font-weight:600;color:{% if reply.sender == request.user %}var(--nea-blue){% else %}var(--nea-green){% endif %};">
+          {% if reply.sender == request.user %}<i class="fas fa-paper-plane" style="margin-right:5px;"></i>You{% else %}<i class="fas fa-user" style="margin-right:5px;"></i>{{ reply.sender.full_name }}{% endif %}
+        </div>
+        <span style="font-size:11px;color:var(--text-muted);">{{ reply.created_at|date:"d M Y, H:i" }}</span>
+      </div>
+      <div style="font-size:13px;line-height:1.6;color:var(--text-secondary);white-space:pre-wrap;">{{ reply.body }}</div>
+    </div>
+    {% endfor %}
+
+    <!-- Reply form -->
+    <div style="background:white;border:1px solid var(--border-color);border-radius:12px;padding:18px;">
+      <div style="font-size:13px;font-weight:600;color:var(--nea-blue);margin-bottom:12px;"><i class="fas fa-reply" style="margin-right:6px;"></i>Reply</div>
+      <form method="POST">
+        {% csrf_token %}
+        <div class="form-group">
+          <textarea name="body" class="form-control" rows="3" required placeholder="Write your reply…"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane"></i> Send Reply</button>
+      </form>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

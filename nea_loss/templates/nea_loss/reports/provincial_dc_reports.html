@@ -1,0 +1,140 @@
+{% extends 'nea_loss/base.html' %}
+{% load nea_filters %}
+{% block title %}DC Reports — NEA{% endblock %}
+{% block page_title %}DC Reports{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; DC Reports{% endblock %}
+
+{% block content %}
+
+{% if provincial_office %}
+<div class="alert alert-info" style="margin-bottom:20px;">
+  <i class="fas fa-building"></i>
+  <strong>{{ provincial_office.name }}</strong> — Showing distribution centers under your province
+</div>
+{% endif %}
+
+<!-- Filters -->
+<div class="card mb-24">
+  <div class="card-body" style="padding:16px 22px;">
+    <form method="GET" style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
+      <div class="form-group" style="margin:0; flex:1; min-width:200px;">
+        <label class="form-label">Fiscal Year</label>
+        <select name="fiscal_year" class="form-control">
+          <option value="">Select Fiscal Year</option>
+          {% for fy in fiscal_years %}
+          <option value="{{ fy.pk }}" {% if selected_fy and selected_fy.pk == fy.pk %}selected{% endif %}>{{ fy.year_bs }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" style="margin:0; flex:1; min-width:180px;">
+        <label class="form-label">Month</label>
+        <select name="month" class="form-control">
+          <option value="">Select Month</option>
+          {% for val, label in month_choices %}
+          <option value="{{ val }}" {% if selected_month == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary" style="height:42px; margin-bottom:0;">
+        <i class="fas fa-search"></i> Show Status
+      </button>
+      <a href="{% url 'provincial_dc_reports' %}" class="btn btn-outline" style="height:42px; margin-bottom:0;">
+        <i class="fas fa-times"></i> Clear
+      </a>
+    </form>
+  </div>
+</div>
+
+{% if selected_month and selected_fy %}
+<!-- Summary cards -->
+<div style="display:flex; gap:14px; flex-wrap:wrap; margin-bottom:20px;">
+  <div style="background:linear-gradient(135deg,#1B4F72,#2E86C1); color:white; padding:14px 24px; border-radius:10px; font-size:13px; font-weight:600; min-width:140px; text-align:center;">
+    <div style="font-size:26px; font-weight:800; line-height:1.2;">{{ dc_rows|length }}</div>
+    <div style="opacity:0.8; margin-top:2px;">Total DCs</div>
+  </div>
+  <div style="background:linear-gradient(135deg,#1E8449,#27AE60); color:white; padding:14px 24px; border-radius:10px; font-size:13px; font-weight:600; min-width:140px; text-align:center;">
+    <div style="font-size:26px; font-weight:800; line-height:1.2;">{{ submitted_count }}</div>
+    <div style="opacity:0.8; margin-top:2px;">Submitted</div>
+  </div>
+  <div style="background:linear-gradient(135deg,#7D6608,#B7950B); color:white; padding:14px 24px; border-radius:10px; font-size:13px; font-weight:600; min-width:140px; text-align:center;">
+    <div style="font-size:26px; font-weight:800; line-height:1.2;">{{ not_submitted_count }}</div>
+    <div style="opacity:0.8; margin-top:2px;">Not Submitted</div>
+  </div>
+</div>
+{% endif %}
+
+<!-- DC Table -->
+<div class="card">
+  <div class="card-header">
+    <h2>
+      <i class="fas fa-building" style="color:var(--nea-blue); margin-right:8px;"></i>
+      Distribution Centers
+      {% if selected_fy and selected_month %}
+        &mdash;
+        {{ selected_fy.year_bs }}
+        /
+        {% for val, label in month_choices %}{% if val == selected_month %}{{ label }}{% endif %}{% endfor %}
+      {% endif %}
+    </h2>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>DC Name</th>
+          <th>Submission Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in dc_rows %}
+        <tr>
+          <td style="color:var(--text-muted); font-size:12px; width:40px;">{{ forloop.counter }}</td>
+          <td>
+            <div style="font-weight:600;">{{ row.dc.name }}</div>
+            <div style="font-size:11px; color:var(--text-muted);">{{ row.dc.code }}</div>
+          </td>
+          <td>
+            {% if not selected_month or not selected_fy %}
+              <span style="color:var(--text-muted); font-size:12px; font-style:italic;">Select fiscal year &amp; month above</span>
+            {% elif row.report %}
+              <span class="badge badge-{{ row.report.status|lower }}">
+                <i class="fas fa-circle" style="font-size:6px;"></i>
+                {{ row.report.get_status_display }}
+              </span>
+              {% if row.report.submission_date %}
+              <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">
+                Submitted: {{ row.report.submission_date|date:"d M Y" }}
+              </div>
+              {% endif %}
+            {% else %}
+              <span style="display:inline-flex; align-items:center; gap:5px; background:#F4F6F6; color:#888; padding:4px 12px; border-radius:12px; font-size:12px; font-weight:500;">
+                <i class="fas fa-minus-circle" style="color:#ccc;"></i> Not Submitted
+              </span>
+            {% endif %}
+          </td>
+          <td>
+            {% if row.report %}
+              <a href="{% url 'report_list' %}?dc={{ row.dc.pk }}{% if selected_fy %}&fiscal_year={{ selected_fy.pk }}{% endif %}"
+                 class="btn btn-outline btn-sm">
+                <i class="fas fa-eye"></i> View
+              </a>
+            {% else %}
+              <span style="color:var(--text-muted); font-size:12px;">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="4" style="text-align:center; padding:40px; color:var(--text-muted);">
+            <i class="fas fa-building" style="font-size:32px; margin-bottom:12px; display:block; opacity:0.3;"></i>
+            No distribution centers found under your province.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

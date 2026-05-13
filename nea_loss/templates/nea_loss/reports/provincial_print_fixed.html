@@ -1,0 +1,181 @@
+{% load static %}
+{% load nea_filters %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Provincial Monthly Report — {{ provincial_office.name }} — {{ selected_fy.year_bs }}</title>
+<style>
+  @page { size: A3 landscape; margin: 12mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 10px; color: #000; background: white; }
+  
+  .report-header { text-align: center; margin-bottom: 20px; }
+  .report-header .org-name { font-size: 18px; font-weight: bold; color: #1B4F72; }
+  .report-header .po-name { font-size: 14px; font-weight: bold; margin-top: 4px; }
+  .report-header .report-title { font-size: 16px; font-weight: bold; margin-top: 4px; color: #C0392B; }
+  .report-header .fy { font-size: 12px; margin-top: 2px; }
+  .report-header .target { font-size: 11px; color: #C0392B; margin-top: 2px; }
+  
+  .divider { border-top: 2px solid #1B4F72; margin: 10px 0; }
+  
+  table { border-collapse: collapse; width: 100%; margin-bottom: 15px; }
+  th, td { border: 0.5px solid #999; padding: 4px 6px; }
+  th { background: #D6EAF8; font-weight: bold; font-size: 9.5px; text-align: center; }
+  td { font-size: 9.5px; }
+  .section-header td { background: #1B4F72; color: white; font-weight: bold; font-size: 10px; }
+  .sub-header td { background: #EBF5FB; font-weight: bold; }
+  .total-row td { background: #D5F5E3; font-weight: bold; }
+  .loss-row td { background: #FADBD8; }
+  .num { text-align: right; }
+  .center { text-align: center; }
+  .label { text-align: left; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<!-- REPORT HEADER -->
+<div class="report-header">
+  <div class="org-name">NEPAL ELECTRICITY AUTHORITY</div>
+  <div class="po-name">{{ provincial_office.name }}</div>
+  <div class="report-title">PROVINCIAL MONTHLY LOSS REPORT</div>
+  <div class="fy">FY {{ selected_fy.year_bs }}{% if selected_month %} — {{ selected_month_name }}{% endif %}</div>
+  <div class="target">NEA Target: {{ nea_target_pct }}%</div>
+</div>
+
+<div class="divider"></div>
+
+<!-- SUMMARY TABLE -->
+<table>
+  <thead>
+    <tr class="section-header">
+      <td colspan="4">PROVINCIAL SUMMARY — {{ selected_fy.year_bs }} — {{ selected_month_name }}</td>
+    </tr>
+    <tr class="sub-header">
+      <th>Description</th>
+      <th>Value</th>
+      <th>Target</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="label">Total Distribution Centers</td>
+      <td class="num">{{ total_dcs }}</td>
+      <td class="center">-</td>
+      <td class="center">-</td>
+    </tr>
+    <tr>
+      <td class="label">Reports Submitted</td>
+      <td class="num">{{ total_submitted }}</td>
+      <td class="center">-</td>
+      <td class="center">-</td>
+    </tr>
+    <tr>
+      <td class="label">Reports Not Submitted</td>
+      <td class="num">{{ total_not_submitted }}</td>
+      <td class="center">-</td>
+      <td class="center">-</td>
+    </tr>
+    <tr>
+      <td class="label">Total Energy Received (kWh)</td>
+      <td class="num">{{ grand_total_received|floatformat:2 }}</td>
+      <td class="center">-</td>
+      <td class="center">-</td>
+    </tr>
+    <tr>
+      <td class="label">Total Energy Utilised (kWh)</td>
+      <td class="num">{{ grand_total_utilised|floatformat:2 }}</td>
+      <td class="center">-</td>
+      <td class="center">-</td>
+    </tr>
+    <tr class="loss-row">
+      <td class="label">Total Energy Loss (kWh)</td>
+      <td class="num">{{ grand_total_loss|floatformat:2 }}</td>
+      <td class="center">{{ nea_target_pct }}%</td>
+      <td class="center">
+        {% if grand_il > nea_target_pct %}
+          <span style="color: red;">Above Target</span>
+        {% else %}
+          <span style="color: green;">Within Target</span>
+        {% endif %}
+      </td>
+    </tr>
+    <tr class="loss-row">
+      <td class="label">Overall Loss Percentage</td>
+      <td class="num">{{ grand_il|floatformat:4 }}%</td>
+      <td class="center">{{ nea_target_pct }}%</td>
+      <td class="center">
+        {% if grand_il > nea_target_pct %}
+          <span style="color: red;">Above Target</span>
+        {% else %}
+          <span style="color: green;">Within Target</span>
+        {% endif %}
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="divider"></div>
+
+<!-- DETAILED DC REPORTS -->
+{% if report_data %}
+<table>
+  <thead>
+    <tr class="section-header">
+      <td colspan="6">DISTRIBUTION CENTER BREAKDOWN</td>
+    </tr>
+    <tr class="sub-header">
+      <th style="width:30px;">S.N.</th>
+      <th style="width:200px;">Distribution Center</th>
+      <th style="width:120px;">Received (kWh)</th>
+      <th style="width:120px;">Utilised (kWh)</th>
+      <th style="width:120px;">Loss %</th>
+      <th style="width:120px;">Loss (kWh)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for dc_data in report_data %}
+    <tr>
+      <td class="center">{{ forloop.counter }}</td>
+      <td class="label">{{ dc_data.dc.name }}</td>
+      <td class="num">{{ dc_data.total_received|floatformat:2 }}</td>
+      <td class="num">{{ dc_data.total_utilised|floatformat:2 }}</td>
+      <td class="num">
+        <span style="{% if dc_data.monthly_il > nea_target_pct %}color: red;{% else %}color: green;{% endif %};font-weight: bold;">
+          {{ dc_data.monthly_il|floatformat:4 }}%
+        </span>
+      </td>
+      <td class="num">{{ dc_data.total_loss|floatformat:2 }}</td>
+    </tr>
+    {% endfor %}
+    <!-- Grand Total Row -->
+    <tr class="total-row">
+      <td class="center" colspan="2"><strong>Grand Total</strong></td>
+      <td class="num"><strong>{{ grand_total_received|floatformat:2 }}</strong></td>
+      <td class="num"><strong>{{ grand_total_utilised|floatformat:2 }}</strong></td>
+      <td class="num">
+        <strong>
+          <span style="{% if grand_il > nea_target_pct %}color: red;{% else %}color: green;{% endif %};">
+            {{ grand_il|floatformat:4 }}%
+          </span>
+        </strong>
+      </td>
+      <td class="num"><strong>{{ grand_total_loss|floatformat:2 }}</strong></td>
+    </tr>
+  </tbody>
+</table>
+{% endif %}
+
+<!-- REPORT FOOTER -->
+<div style="margin-top: 30px; text-align: center; font-size: 10px; color: #666;">
+  <p><strong>Report Generated:</strong> {% now "Y-m-d H:i" %}</p>
+  <p><strong>Generated By:</strong> {{ report.created_by.full_name }}</p>
+  {% if report.dmd_reviewed_by %}
+  <p><strong>DMD Approved By:</strong> {{ report.dmd_reviewed_by.full_name }}</p>
+  <p><strong>DMD Approved At:</strong> {{ report.dmd_reviewed_at|date:"Y-m-d H:i" }}</p>
+  {% endif %}
+</div>
+
+</body>
+</html>

@@ -1,0 +1,505 @@
+{% extends 'nea_loss/base.html' %}
+{% load static %}
+{% block title %}Admin DC Report Creation{% endblock %}
+{% block page_title %}Admin DC Report Creation{% endblock %}
+{% block breadcrumb %}System Management &rsaquo; Create Draft Report{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-magic me-2"></i>Create Draft Report for DC</h5>
+                    <small class="text-muted">Create draft reports using approved reports as templates</small>
+                </div>
+                <div class="card-body">
+                    <!-- Messages -->
+                    <div id="messageContainer"></div>
+                    
+                    <!-- Form -->
+                    <form id="dcReportForm" method="POST">
+                        {% csrf_token %}
+                        
+                        <!-- DC Selection -->
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="dc_id" class="form-label">
+                                    <i class="fas fa-building me-1"></i>Select Distribution Center
+                                </label>
+                                <select class="form-select" id="dc_id" name="dc_id" required>
+                                    <option value="">Select Distribution Center...</option>
+                                    {% for dc in dcs %}
+                                    <option value="{{ dc.pk }}">{{ dc.name }}</option>
+                                    {% endfor %}
+                                </select>
+                                <div class="form-text">Choose the DC for which to create the draft report</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Month Selection -->
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="month" class="form-label">
+                                    <i class="fas fa-calendar me-1"></i>Available Month
+                                </label>
+                                <select class="form-select" id="month" name="month" disabled required>
+                                    <option value="">Select DC first...</option>
+                                </select>
+                                <div class="form-text">Only the next available month will be shown</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Template Report Selection -->
+                        <div class="row mb-3">
+                            <div class="col-md-8">
+                                <label for="template_report_id" class="form-label">
+                                    <i class="fas fa-file-alt me-1"></i>Approved Report Template
+                                </label>
+                                <select class="form-select" id="template_report_id" name="template_report_id" disabled required>
+                                    <option value="">Select month first...</option>
+                                </select>
+                                <div class="form-text">Choose an approved report to use as template (from any DC)</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Template Preview -->
+                        <div id="templatePreview" style="display: none;" class="mb-4">
+                            <div class="alert alert-info">
+                                <h6><i class="fas fa-eye me-2"></i>Template Preview</h6>
+                                <div id="previewContent"></div>
+                            </div>
+                        </div>
+                        
+                        <!-- Submit Button -->
+                        <div class="row">
+                            <div class="col-12">
+                                <button type="submit" id="submitBtn" class="btn btn-primary" disabled>
+                                    <i class="fas fa-plus-circle me-1"></i>Create Draft Report
+                                </button>
+                                <a href="{% url 'dashboard' %}" class="btn btn-secondary ms-2">
+                                    <i class="fas fa-arrow-left me-1"></i>Back to Dashboard
+                                </a>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Global variables
+let selectedDC = null;
+let selectedMonth = null;
+let selectedTemplate = null;
+
+// DC selection change
+document.getElementById('dc_id').addEventListener('change', function() {
+    const dcId = this.value;
+    selectedDC = this.options[this.selectedIndex].text;
+    
+    if (dcId) {
+        loadAvailableMonths(dcId);
+    } else {
+        resetForm();
+    }
+});
+
+// Month selection change
+document.getElementById('month').addEventListener('change', function() {
+    const month = this.value;
+    selectedMonth = this.options[this.selectedIndex].text;
+    
+    if (month) {
+        loadApprovedReports();
+    } else {
+        resetTemplateSection();
+    }
+});
+
+// Template selection change
+document.getElementById('template_report_id').addEventListener('change', function() {
+    const templateId = this.value;
+    
+    if (templateId) {
+        showTemplatePreview(templateId);
+    } else {
+        hideTemplatePreview();
+    }
+});
+
+// Load available months for selected DC
+function loadAvailableMonths(dcId) {
+    console.log('Loading months for DC:', dcId);
+    const formData = new FormData();
+    formData.append('action', 'get_months');
+    formData.append('dc_id', dcId);
+    formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    
+    fetch('{% url "admin_tools:admin_dc_report" %}', {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('Months response:', data);
+        if (data.error) {
+            showMessage('error', data.error);
+            return;
+        }
+        
+        populateMonthsDropdown(data.months);
+    })
+    .catch(error => {
+        console.error('Error loading months:', error);
+        showMessage('error', 'Error loading available months.');
+    });
+}
+
+// Load approved reports for template selection
+function loadApprovedReports() {
+    const dcId = document.getElementById('dc_id').value;
+    const month = document.getElementById('month').value;
+    
+    console.log('Loading approved reports for DC:', dcId, 'Month:', month);
+    
+    const formData = new FormData();
+    formData.append('action', 'get_approved_reports');
+    formData.append('dc_id', dcId);
+    formData.append('month', month);
+    formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    
+    fetch('{% url "admin_tools:admin_dc_report" %}', {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('Approved reports response:', data);
+        if (data.error) {
+            showMessage('error', data.error);
+            return;
+        }
+        
+        populateTemplateReportsDropdown(data.reports);
+    })
+    .catch(error => {
+        console.error('Error loading approved reports:', error);
+        showMessage('error', 'Error loading approved reports.');
+    });
+}
+
+// Populate months dropdown
+function populateMonthsDropdown(months) {
+    const monthSelect = document.getElementById('month');
+    monthSelect.innerHTML = '<option value="">Select month...</option>';
+    
+    if (months.length === 0) {
+        monthSelect.innerHTML = '<option value="">All months have reports</option>';
+        monthSelect.disabled = true;
+        resetTemplateSection();
+        return;
+    }
+    
+    months.forEach(month => {
+        const option = document.createElement('option');
+        option.value = month.value;
+        option.textContent = month.text;
+        monthSelect.appendChild(option);
+    });
+    
+    monthSelect.disabled = false;
+    
+    // If only one month, auto-select it
+    if (months.length === 1) {
+        monthSelect.value = months[0].value;
+        selectedMonth = months[0].text;
+        loadApprovedReports();
+    } else {
+        resetTemplateSection();
+    }
+}
+
+// Populate template reports dropdown
+function populateTemplateReportsDropdown(reports) {
+    const templateSelect = document.getElementById('template_report_id');
+    templateSelect.innerHTML = '<option value="">Select approved report...</option>';
+    
+    if (reports.length === 0) {
+        templateSelect.innerHTML = '<option value="">No approved reports available</option>';
+        templateSelect.disabled = true;
+        hideTemplatePreview();
+        return;
+    }
+    
+    reports.forEach(report => {
+        const option = document.createElement('option');
+        option.value = report.id;
+        option.textContent = `${report.dc_name} - ${report.month} (${report.received.toLocaleString()} kWh, ${report.loss_percent.toFixed(2)}% loss)`;
+        templateSelect.appendChild(option);
+    });
+    
+    templateSelect.disabled = false;
+    hideTemplatePreview();
+}
+
+// Show template preview
+function showTemplatePreview(templateId) {
+    const select = document.getElementById('template_report_id');
+    const option = select.options[select.selectedIndex];
+    const previewDiv = document.getElementById('templatePreview');
+    const previewContent = document.getElementById('previewContent');
+    
+    // Parse the option text to extract information
+    const text = option.textContent;
+    const match = text.match(/(.+) - (.+) \((.+) kWh, (.+)% loss\)/);
+    
+    if (match) {
+        const [, dcName, month, received, lossPercent] = match;
+        previewContent.innerHTML = `
+            <div class="row">
+                <div class="col-md-6">
+                    <strong>DC:</strong> ${dcName}<br>
+                    <strong>Month:</strong> ${month}<br>
+                    <strong>Energy Received:</strong> ${received} kWh
+                </div>
+                <div class="col-md-6">
+                    <strong>Loss:</strong> ${lossPercent}%<br>
+                    <strong>Status:</strong> <span class="badge bg-success">Approved</span><br>
+                    <strong>Action:</strong> Will create exact copy for ${selectedDC} - ${selectedMonth}
+                </div>
+            </div>
+        `;
+        previewDiv.style.display = 'block';
+        selectedTemplate = { dcName, month, received, lossPercent };
+    }
+}
+
+// Hide template preview
+function hideTemplatePreview() {
+    document.getElementById('templatePreview').style.display = 'none';
+    selectedTemplate = null;
+}
+
+// Reset form sections
+function resetForm() {
+    document.getElementById('month').innerHTML = '<option value="">Select DC first...</option>';
+    document.getElementById('month').disabled = true;
+    document.getElementById('template_report_id').innerHTML = '<option value="">Select month first...</option>';
+    document.getElementById('template_report_id').disabled = true;
+    hideTemplatePreview();
+    document.getElementById('submitBtn').disabled = true;
+    selectedDC = null;
+    selectedMonth = null;
+    selectedTemplate = null;
+}
+
+function resetTemplateSection() {
+    document.getElementById('template_report_id').innerHTML = '<option value="">Select month first...</option>';
+    document.getElementById('template_report_id').disabled = true;
+    hideTemplatePreview();
+    document.getElementById('submitBtn').disabled = true;
+    selectedTemplate = null;
+}
+
+// Check form validity
+function checkFormValidity() {
+    const dcId = document.getElementById('dc_id').value;
+    const month = document.getElementById('month').value;
+    const templateId = document.getElementById('template_report_id').value;
+    
+    const isValid = dcId && month && templateId;
+    document.getElementById('submitBtn').disabled = !isValid;
+    
+    console.log('Form validity check:', { dcId, month, templateId, isValid });
+    return isValid;
+}
+
+// Form submission
+document.getElementById('dcReportForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    console.log('Form submission triggered');
+    
+    if (!checkFormValidity()) {
+        console.log('Form validation failed, stopping submission');
+        return;
+    }
+    
+    console.log('Form validation passed, proceeding with submission');
+    
+    const formData = new FormData(this);
+    formData.append('action', 'create_report');
+    formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    
+    console.log('FormData contents:');
+    for (let [key, value] of formData.entries()) {
+        console.log(key, value);
+    }
+    
+    // Disable submit button
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Creating...';
+    
+    fetch('{% url "admin_tools:admin_dc_report" %}', {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: formData
+    })
+    .then(response => {
+        console.log('Response received:', response.status, response.statusText);
+        return response.json();
+    })
+    .then(data => {
+        console.log('Create report response:', data);
+        if (data.success) {
+            console.log('Success! Showing message:', data.message);
+            showMessage('success', data.message);
+            setTimeout(() => {
+                if (data.report_url) {
+                    console.log('Redirecting to:', data.report_url);
+                    window.location.href = data.report_url;
+                } else {
+                    console.log('Reloading page');
+                    location.reload();
+                }
+            }, 2000);
+        } else {
+            console.log('Error in response:', data.error);
+            showMessage('error', data.error);
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-plus-circle me-1"></i>Create Draft Report';
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showMessage('error', 'An error occurred while creating the report.');
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fas fa-plus-circle me-1"></i>Create Draft Report';
+    });
+});
+
+function showMessage(type, message) {
+    const messageContainer = document.getElementById('messageContainer');
+    const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
+    const icon = type === 'success' ? 'fas fa-check-circle' : 'fas fa-exclamation-triangle';
+    
+    const messageHtml = `
+        <div class="alert ${alertClass} alert-dismissible fade show" role="alert" style="font-size: 1.1em; font-weight: 500;">
+            <i class="${icon} me-2"></i>
+            <strong>${type === 'success' ? 'Success!' : 'Error!'}</strong> ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+    
+    messageContainer.innerHTML = messageHtml;
+    
+    // For success messages, keep longer and add animation
+    if (type === 'success') {
+        // Auto-dismiss after 8 seconds for success messages
+        setTimeout(() => {
+            const alert = messageContainer.querySelector('.alert');
+            if (alert) {
+                alert.classList.add('fade-out');
+                setTimeout(() => alert.remove(), 300);
+            }
+        }, 8000);
+    } else {
+        // Auto-dismiss after 5 seconds for error messages
+        setTimeout(() => {
+            const alert = messageContainer.querySelector('.alert');
+            if (alert) {
+                alert.remove();
+            }
+        }, 5000);
+    }
+}
+
+// Initialize form validation checks
+document.getElementById('dc_id').addEventListener('change', checkFormValidity);
+document.getElementById('month').addEventListener('change', checkFormValidity);
+document.getElementById('template_report_id').addEventListener('change', checkFormValidity);
+</script>
+
+<style>
+.card {
+    border: none;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+.card-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.form-select:disabled {
+    background-color: #e9ecef;
+}
+
+.btn:disabled {
+    cursor: not-allowed;
+}
+
+.alert {
+    border: none;
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.alert-success {
+    background-color: #d1f2eb;
+    color: #0f5132;
+    border-left: 4px solid #198754;
+}
+
+.alert-danger {
+    background-color: #f8d7da;
+    color: #842029;
+    border-left: 4px solid #dc3545;
+}
+
+#templatePreview {
+    animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideIn {
+    from { opacity: 0; transform: translateX(-20px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+.alert-success {
+    animation: slideIn 0.3s ease-out;
+}
+
+.fade-out {
+    animation: fadeOut 0.3s ease-out forwards;
+}
+
+@keyframes fadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+
+.form-text {
+    font-size: 0.875em;
+    color: #6c757d;
+}
+</style>
+{% endblock %}

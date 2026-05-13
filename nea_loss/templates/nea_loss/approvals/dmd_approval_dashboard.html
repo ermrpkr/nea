@@ -1,0 +1,332 @@
+{% extends 'nea_loss/base.html' %}
+{% block title %}DMD Approvals — NEA{% endblock %}
+{% block page_title %}DMD Approval Dashboard{% endblock %}
+{% block breadcrumb %}Approvals &rsaquo; DMD Approvals{% endblock %}
+
+{% block content %}
+<div class="alert alert-info mb-24" style="display:flex;align-items:center;gap:10px;">
+  <i class="fas fa-gavel fa-lg"></i>
+  <span>
+    As <strong>Deputy Managing Director</strong>, you can review and approve/reject provincial reports submitted by provincial offices.
+    Please review each report carefully before making a decision.
+  </span>
+</div>
+
+<!-- Pending Reports Section -->
+<div class="card mb-24">
+  <div class="card-header">
+    <h2>
+      <i class="fas fa-clock" style="color:var(--nea-yellow);margin-right:6px;"></i>
+      Pending Approvals
+      {% if pending_count %}
+      <span class="badge" style="background:var(--nea-yellow);color:white;margin-left:8px;">{{ pending_count }}</span>
+      {% endif %}
+    </h2>
+  </div>
+  <div class="card-body">
+    {% if pending_reports %}
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Provincial Office</th>
+            <th>Fiscal Year</th>
+            <th>Month</th>
+            <th>Submitted By</th>
+            <th>Submitted Date</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for report in pending_reports %}
+          <tr>
+            <td>
+              <strong>{{ report.provincial_office.name }}</strong>
+            </td>
+            <td>{{ report.fiscal_year.year_bs }}</td>
+            <td>{{ report.get_month_display }}</td>
+            <td>{{ report.submitted_to_dmd_by.full_name|default:"-" }}</td>
+            <td>
+              {% if report.submitted_to_dmd_at %}
+                {{ report.submitted_to_dmd_at|date:"Y-m-d H:i" }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td>
+              <div class="btn-group">
+                <a href="{% url 'provincial_report_review' report.pk %}" class="btn btn-outline btn-sm" target="_blank">
+                  <i class="fas fa-eye"></i> Review
+                </a>
+                <form method="POST" action="{% url 'dmd_approve_provincial_report' report.pk %}" style="display:inline;" onsubmit="return confirm('Approve this provincial report?')">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-success btn-sm">
+                    <i class="fas fa-check"></i> Approve
+                  </button>
+                </form>
+                <button type="button" class="btn btn-danger btn-sm" onclick="showRejectModal({{ report.pk }}, '{{ report.provincial_office.name }} - {{ report.fiscal_year.year_bs }} - {{ report.get_month_display }}')">
+                  <i class="fas fa-times"></i> Reject
+                </button>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="alert alert-success">
+      <i class="fas fa-check-circle"></i>
+      No pending approvals. All submitted reports have been processed.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Recently Processed Section -->
+<div class="card">
+  <div class="card-header">
+    <h2><i class="fas fa-history" style="color:var(--nea-blue);margin-right:6px;"></i> Recently Processed</h2>
+  </div>
+  <div class="card-body">
+    {% if processed_reports %}
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Provincial Office</th>
+            <th>Fiscal Year</th>
+            <th>Month</th>
+            <th>Status</th>
+            <th>Processed By</th>
+            <th>Process Date</th>
+            <th>Remarks</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for report in processed_reports %}
+          <tr>
+            <td>
+              <strong>{{ report.provincial_office.name }}</strong>
+            </td>
+            <td>{{ report.fiscal_year.year_bs }}</td>
+            <td>{{ report.get_month_display }}</td>
+            <td>
+              {% if report.status == 'DMD_APPROVED' %}
+                <span class="badge badge-approved">
+                  <i class="fas fa-check-circle"></i> Approved
+                </span>
+              {% elif report.status == 'DMD_REJECTED' %}
+                <span class="badge badge-rejected">
+                  <i class="fas fa-times-circle"></i> Rejected
+                </span>
+              {% endif %}
+            </td>
+            <td>{{ report.dmd_reviewed_by.full_name|default:"-" }}</td>
+            <td>
+              {% if report.dmd_reviewed_at %}
+                {{ report.dmd_reviewed_at|date:"Y-m-d H:i" }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td>
+              {% if report.dmd_remarks %}
+                <span title="{{ report.dmd_remarks }}" style="cursor:help;">
+                  {{ report.dmd_remarks|truncatechars:30 }}
+                </span>
+              {% else %}
+                -
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+      <i class="fas fa-info-circle"></i>
+      No reports have been processed yet.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Reject Modal -->
+<div id="rejectModal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3><i class="fas fa-times-circle" style="color:var(--nea-red);margin-right:6px;"></i> Reject Provincial Report</h3>
+      <button type="button" class="modal-close" onclick="hideRejectModal()">&times;</button>
+    </div>
+    <form method="POST" id="rejectForm">
+      {% csrf_token %}
+      <div class="modal-body">
+        <p><strong>Report:</strong> <span id="rejectReportName"></span></p>
+        <div class="form-group">
+          <label class="form-label">Remarks *</label>
+          <textarea name="remarks" class="form-control" rows="4" placeholder="Please provide reasons for rejection..." required></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" onclick="hideRejectModal()">Cancel</button>
+        <button type="submit" class="btn btn-danger">
+          <i class="fas fa-times"></i> Reject Report
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+.badge {
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.badge-approved {
+  background: var(--nea-green-light);
+  color: var(--nea-green);
+}
+
+.badge-rejected {
+  background: var(--nea-red-light);
+  color: var(--nea-red);
+}
+
+.btn-group {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.data-table th {
+  background: #F8FAFC;
+  padding: 12px 8px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 2px solid var(--border-color);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.data-table td {
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+.data-table tr:hover {
+  background: #F8FAFC;
+}
+
+.table-responsive {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+/* Modal Styles */
+.modal {
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-content {
+  background-color: white;
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  width: 90%;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-close:hover {
+  color: var(--text-primary);
+}
+
+.modal-body {
+  padding: 24px;
+}
+
+.modal-footer {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  padding: 20px 24px;
+  border-top: 1px solid var(--border-color);
+}
+</style>
+
+<script>
+function showRejectModal(reportId, reportName) {
+  document.getElementById('rejectReportName').textContent = reportName;
+  document.getElementById('rejectForm').action = '/approvals/dmd/' + reportId + '/reject/';
+  document.getElementById('rejectModal').style.display = 'flex';
+}
+
+function hideRejectModal() {
+  document.getElementById('rejectModal').style.display = 'none';
+  document.getElementById('rejectForm').reset();
+}
+
+// Close modal when clicking outside
+window.onclick = function(event) {
+  const modal = document.getElementById('rejectModal');
+  if (event.target == modal) {
+    hideRejectModal();
+  }
+}
+</script>
+{% endblock %}

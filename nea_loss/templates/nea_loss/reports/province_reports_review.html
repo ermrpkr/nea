@@ -1,0 +1,78 @@
+{% extends 'nea_loss/base.html' %}
+{% load nea_filters %}
+{% block title %}Approved Provincial Reports{% endblock %}
+{% block page_title %}Approved Provincial Reports{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; Approved Provincial Reports{% endblock %}
+
+{% block content %}
+<!-- Simple Header -->
+<div style="background:white; border-radius:8px; padding:20px; margin-bottom:20px; border:1px solid var(--border-color);">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+    <div>
+      <h2 style="font-size:18px; font-weight:600; margin:0;">Approved Provincial Reports</h2>
+      <div style="font-size:13px; color:var(--text-secondary); margin-top:4px;">
+        Fiscal Year: <strong>{{ reports.0.fiscal_year.year_bs|default:"-" }}</strong>
+      </div>
+    </div>
+  </div>
+
+<!-- Reports Table -->
+<div style="background:white; border-radius:8px; border:1px solid var(--border-color); overflow:hidden;">
+  <div style="overflow-x:auto;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Provincial Office</th>
+          <th>Fiscal Year</th>
+          <th>Month</th>
+          <th>Status</th>
+          <th>Created By</th>
+          <th>Created At</th>
+          <th>DMD Reviewed By</th>
+          <th>DMD Reviewed At</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for report in reports %}
+        <tr>
+          <td>{{ report.provincial_office.name }}</td>
+          <td>{{ report.fiscal_year.year_bs }}</td>
+          <td>{{ report.get_month_display }}</td>
+          <td><span class="badge badge-approved">{{ report.get_status_display }}</span></td>
+          <td>{{ report.created_by.get_full_name|default:report.created_by.username }}</td>
+          <td>{{ report.created_at|date:"Y-m-d H:i" }}</td>
+          <td>{{ report.dmd_reviewed_by.get_full_name|default:"-" }}</td>
+          <td>{{ report.dmd_reviewed_at|date:"Y-m-d H:i"|default:"-" }}</td>
+          <td>
+            <a href="{% url 'provincial_report_detail' report.pk %}" class="btn btn-outline btn-sm" title="View Report">
+              <i class="fas fa-eye"></i> View
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="9" style="text-align:center; padding:40px; color:var(--text-muted);">
+            No approved provincial reports found
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<style>
+.badge-approved {
+  background: var(--nea-green-light);
+  color: var(--nea-green);
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+</style>
+{% endblock %}

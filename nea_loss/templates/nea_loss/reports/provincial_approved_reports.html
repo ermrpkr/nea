@@ -1,0 +1,124 @@
+{% extends 'nea_loss/base.html' %}
+{% block title %}My Approved Reports — NEA{% endblock %}
+{% block page_title %}My Approved Provincial Reports{% endblock %}
+{% block breadcrumb %}Reports &rsaquo; Provincial Reports &rsaquo; Approved{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+  <div style="font-size:13px;color:var(--text-muted);">
+    DMD-approved provincial reports for {{ provincial_office.name }}
+  </div>
+  <div style="display:flex;gap:10px;align-items:center;">
+    <a href="{% url 'provincial_report_create' %}" class="btn btn-success">
+      <i class="fas fa-magic"></i> Create New Report
+    </a>
+  </div>
+</div>
+
+<!-- Summary Card -->
+<div class="card mb-20" style="background:linear-gradient(135deg, #28a745, #20c997);color:white;border:none;">
+  <div class="card-body" style="padding:20px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div style="font-size:14px;opacity:0.9;margin-bottom:4px;">Total Approved Reports</div>
+        <div style="font-size:32px;font-weight:700;">{{ approved_reports.count }}</div>
+        <div style="font-size:12px;opacity:0.8;margin-top:4px;">
+          {% if approved_reports.count > 0 %}
+            Latest: {{ approved_reports.first.fiscal_year.year_bs }} - {{ approved_reports.first.get_month_display }}
+          {% else %}
+            No approved reports yet
+          {% endif %}
+        </div>
+      </div>
+      <div style="font-size:48px;opacity:0.3;">
+        <i class="fas fa-check-circle"></i>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Fiscal Year</th>
+          <th>Month</th>
+          <th>Created By</th>
+          <th>DMD Approved By</th>
+          <th>DMD Approved At</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for report in approved_reports %}
+        <tr style="background-color: rgba(40, 167, 69, 0.05); border-left: 3px solid #28a745;">
+          <td style="color:var(--text-muted);font-size:12px;">{{ forloop.counter }}</td>
+          <td><span class="fy-badge" style="font-size:11px;">{{ report.fiscal_year.year_bs }}</span></td>
+          <td style="font-weight:600;">{{ report.get_month_display }}</td>
+          <td style="font-size:12px;color:var(--text-muted);">
+            {% if report.created_by %}{{ report.created_by.full_name }}{% else %}—{% endif %}
+          </td>
+          <td style="font-size:12px;color:var(--text-muted);">
+            {% if report.dmd_reviewed_by %}{{ report.dmd_reviewed_by.full_name }}{% else %}—{% endif %}
+          </td>
+          <td style="font-size:12px;color:var(--text-muted);">
+            {% if report.dmd_reviewed_at %}{{ report.dmd_reviewed_at|date:"Y-m-d H:i" }}{% else %}—{% endif %}
+          </td>
+          <td>
+            <div style="display:flex;gap:6px;">
+              <a href="{% url 'provincial_report_detail' report.pk %}" 
+                 class="btn btn-primary btn-sm" title="View Complete Report Data">
+                <i class="fas fa-file-alt"></i> View Report
+              </a>
+              <a href="{% url 'provincial_report_detail' report.pk %}?print=true" 
+                 class="btn btn-outline btn-sm" title="Print Report">
+                <i class="fas fa-print"></i> Print
+              </a>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" style="text-align:center;padding:40px;color:var(--text-muted);">
+            <i class="fas fa-check-circle" style="font-size:32px;margin-bottom:12px;display:block;opacity:0.3;"></i>
+            No approved reports found.
+            <div style="margin-top:8px;">
+              <a href="{% url 'provincial_report_create' %}" class="btn btn-success btn-sm">
+                <i class="fas fa-magic"></i> Create a Report
+              </a>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<style>
+@media print {
+  body * { visibility: hidden !important; }
+  .card, .card * { visibility: visible !important; }
+  .card { 
+    position: absolute !important; 
+    top: 0 !important; 
+    left: 0 !important; 
+    width: 100% !important; 
+    border: none !important; 
+    box-shadow: none !important; 
+    border-radius: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .card .btn {
+    display: none !important;
+  }
+  .card-header {
+    background: none !important;
+    color: black !important;
+  }
+}
+</style>
+{% endblock %}
