@@ -93,6 +93,14 @@ urlpatterns = [
     path('overrides/request/', views.OverrideRequestView.as_view(), name='override_request'),
     path('overrides/manage/', views.OverrideManagementView.as_view(), name='override_manage'),
 
+    # Feeder Management
+    path('feeders/', views.FeederListView.as_view(), name='feeder_list'),
+    path('feeders/request/', views.FeederRequestView.as_view(), name='feeder_request'),
+    path('feeders/management/', views.FeederManagementView.as_view(), name='feeder_management'),
+    path('feeders/requests/', views.FeederRequestsView.as_view(), name='feeder_requests'),
+    path('feeders/requests/<int:pk>/approve/', views.feeder_request_approve, name='feeder_request_approve'),
+    path('feeders/requests/<int:pk>/reject/', views.feeder_request_reject, name='feeder_request_reject'),
+
     # Admin Tools (separate module - can be easily removed)
     path('admin-tools/', include('nea_loss.admin_tools.urls')),
 ]

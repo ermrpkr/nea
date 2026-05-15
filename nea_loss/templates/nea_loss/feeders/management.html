@@ -1,0 +1,144 @@
+{% extends 'nea_loss/base.html' %}
+
+{% block title %}Manage Feeders - {{ provincial_office.name }}{% endblock %}
+
+{% block page_title %}Manage Feeders{% endblock %}
+{% block breadcrumb %}Feeder Management / Manage Feeders{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <h2>Manage Feeders for {{ provincial_office.name }}</h2>
+  </div>
+  <div class="card-body">
+    <div style="margin-bottom: 20px; display: flex; gap: 10px; align-items: center;">
+      <a href="{% url 'feeder_requests' %}" class="btn btn-primary">
+        <i class="fas fa-inbox"></i> View Feeder Requests
+      </a>
+    </div>
+
+    <!-- Search/Filter Section -->
+    <div style="margin-bottom: 20px; padding: 15px; background: #F7FAFC; border-radius: 8px; border: 1px solid var(--border-color);">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Search Feeders</label>
+          <input type="text" id="searchInput" class="form-control" placeholder="Search by feeder name..." onkeyup="filterFeeders()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Filter by Type</label>
+          <select id="typeFilter" class="form-control" onchange="filterFeeders()">
+            <option value="">All Types</option>
+            {% for value, label in source_type_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Filter by DC</label>
+          <select id="dcFilter" class="form-control" onchange="filterFeeders()">
+            <option value="">All DCs</option>
+            {% for dc in dcs %}
+            <option value="{{ dc.name }}">{{ dc.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div id="feedersContainer">
+      {% for dc_name, feeders in feeders_by_dc.items %}
+      <div class="dc-section" style="margin-bottom: 30px;" data-dc="{{ dc_name }}">
+        <h3 style="margin-bottom: 15px; color: var(--nea-blue);">{{ dc_name }}</h3>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Voltage Level</th>
+                <th>Multiplying Factor</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for feeder in feeders %}
+              <tr class="feeder-row" data-name="{{ feeder.name|lower }}" data-type="{{ feeder.source_type }}">
+                <td>{{ feeder.name }}</td>
+                <td>{{ feeder.get_source_type_display }}</td>
+                <td>{{ feeder.voltage_level|default:"-" }}</td>
+                <td>{{ feeder.multiplying_factor }}</td>
+                <td>
+                  <span class="badge badge-approved">Active</span>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% empty %}
+      <div style="text-align: center; padding: 30px; color: var(--text-muted);">
+        No feeders found for any DC under your provincial office.
+      </div>
+      {% endfor %}
+    </div>
+
+    <div id="noResults" style="display: none; text-align: center; padding: 30px; color: var(--text-muted);">
+      No feeders match your search criteria.
+    </div>
+  </div>
+</div>
+
+<script>
+function filterFeeders() {
+  const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+  const typeFilter = document.getElementById('typeFilter').value;
+  const dcFilter = document.getElementById('dcFilter').value;
+  
+  const dcSections = document.querySelectorAll('.dc-section');
+  let hasResults = false;
+  
+  dcSections.forEach(section => {
+    const dcName = section.getAttribute('data-dc');
+    const feederRows = section.querySelectorAll('.feeder-row');
+    let sectionHasMatch = false;
+    
+    // Check if DC matches filter
+    if (dcFilter && dcName !== dcFilter) {
+      section.style.display = 'none';
+      return;
+    }
+    
+    feederRows.forEach(row => {
+      const feederName = row.getAttribute('data-name');
+      const feederType = row.getAttribute('data-type');
+      
+      const matchesSearch = !searchTerm || feederName.includes(searchTerm);
+      const matchesType = !typeFilter || feederType === typeFilter;
+      
+      if (matchesSearch && matchesType) {
+        row.style.display = '';
+        sectionHasMatch = true;
+        hasResults = true;
+      } else {
+        row.style.display = 'none';
+      }
+    });
+    
+    if (sectionHasMatch) {
+      section.style.display = '';
+    } else {
+      section.style.display = 'none';
+    }
+  });
+  
+  // Show/hide no results message
+  const noResults = document.getElementById('noResults');
+  if (hasResults) {
+    noResults.style.display = 'none';
+  } else {
+    noResults.style.display = 'block';
+  }
+}
+</script>
+{% endblock %}

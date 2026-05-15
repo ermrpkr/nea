@@ -630,6 +630,9 @@ class Notification(models.Model):
         ('OVERRIDE_REQUESTED', 'Override Requested'),
         ('OVERRIDE_APPROVED', 'Override Approved'),
         ('OVERRIDE_REJECTED', 'Override Rejected'),
+        ('FEEDER_REQUESTED', 'Feeder Change Requested'),
+        ('FEEDER_APPROVED', 'Feeder Change Approved'),
+        ('FEEDER_REJECTED', 'Feeder Change Rejected'),
     ]
 
     recipient = models.ForeignKey(NEAUser, on_delete=models.CASCADE, related_name='notifications')
@@ -639,6 +642,86 @@ class Notification(models.Model):
     related_report = models.ForeignKey(LossReport, on_delete=models.CASCADE, null=True, blank=True)
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+
+# ─────────────────────────── FEEDER REQUEST ───────────────────────────
+
+class FeederRequest(models.Model):
+    """DC users can request feeder additions/deletions. Provincial users approve/reject."""
+    REQUEST_TYPE_CHOICES = [
+        ('ADD', 'Add Feeder'),
+        ('DELETE', 'Delete Feeder'),
+        ('MODIFY', 'Modify Feeder'),
+    ]
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('APPROVED', 'Approved'),
+        ('REJECTED', 'Rejected'),
+    ]
+
+    distribution_center = models.ForeignKey(DistributionCenter, on_delete=models.CASCADE, related_name='feeder_requests')
+    requested_by = models.ForeignKey(NEAUser, on_delete=models.CASCADE, related_name='feeder_requests')
+    request_type = models.CharField(max_length=20, choices=REQUEST_TYPE_CHOICES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    
+    # Feeder details
+    feeder_name = models.CharField(max_length=200, help_text='Name of the feeder')
+    source_type = models.CharField(max_length=30, choices=MeterPoint.SOURCE_TYPE_CHOICES, blank=True)
+    voltage_level = models.CharField(max_length=20, blank=True)
+    multiplying_factor = models.DecimalField(max_digits=10, decimal_places=3, default=1, blank=True, null=True)
+    
+    # For DELETE requests, reference existing meter point
+    meter_point = models.ForeignKey(MeterPoint, on_delete=models.SET_NULL, null=True, blank=True, 
+                                    related_name='feeder_requests', help_text='Existing feeder to delete')
+    
+    # Reason and approval
+    reason = models.TextField(help_text='Reason for this request')
+    provincial_notes = models.TextField(blank=True, help_text='Notes from provincial office')
+    approved_by = models.ForeignKey(NEAUser, on_delete=models.SET_NULL, null=True, blank=True, 
+                                    related_name='approved_feeder_requests')
+    approved_at = models.DateTimeField(null=True, blank=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def approve(self, approved_by, notes=''):
+        """Approve the feeder request and make the actual change"""
+        self.status = 'APPROVED'
+        self.approved_by = approved_by
+        self.provincial_notes = notes
+        self.approved_at = timezone.now()
+        
+        if self.request_type == 'ADD':
+            # Create the new meter point
+            MeterPoint.objects.create(
+                distribution_center=self.distribution_center,
+                name=self.feeder_name,
+                code='',
+                source_type=self.source_type,
+                voltage_level=self.voltage_level,
+                multiplying_factor=self.multiplying_factor or 1,
+                is_active=True,
+            )
+        elif self.request_type == 'DELETE' and self.meter_point:
+            # Soft delete: mark as inactive
+            self.meter_point.is_active = False
+            self.meter_point.save()
+        
+        self.save()
+
+    def reject(self, approved_by, notes=''):
+        """Reject the feeder request"""
+        self.status = 'REJECTED'
+        self.approved_by = approved_by
+        self.provincial_notes = notes
+        self.approved_at = timezone.now()
+        self.save()
+
+    def __str__(self):
+        return f"{self.get_request_type_display()} - {self.feeder_name} ({self.status})"
 
     class Meta:
         ordering = ['-created_at']

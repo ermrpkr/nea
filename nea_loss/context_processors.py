@@ -37,7 +37,7 @@ def nea_permissions(request):
 
     # Count pending DMD approvals
     pending_dmd_count = 0
-    if u.role == 'DMD':
+    if u.role in ['DMD', 'MD'] or is_sys_admin:
         from .models import ProvincialReport
         pending_dmd_count = ProvincialReport.objects.filter(status='SUBMITTED_TO_DMD').count()
 

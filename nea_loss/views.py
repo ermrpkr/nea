@@ -27,7 +27,7 @@ from .models import (
     ConsumerCategory, EnergyUtilisation, ConsumerCount, FiscalYear,
     DistributionCenter, ProvincialOffice, Province, Notification, AuditLog,
     ProvincialReport, MonthlyMeterPointStatus, DCYearlyTarget, DCMonthlyTarget, Message,
-    DCReportOverride,
+    DCReportOverride, FeederRequest,
 )
 
 
@@ -2384,8 +2384,9 @@ def api_manage_meter_point(request):
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
     report = get_object_or_404(LossReport, pk=data.get('report_pk'))
-    if not _can_edit_report(request.user, report):
-        return JsonResponse({'error': 'Permission denied'}, status=403)
+    # Only provincial users (or system admin) can manage feeders
+    if not _can_manage_feeders(request.user, report.distribution_center):
+        return JsonResponse({'error': 'Permission denied. Only provincial users can manage feeders.'}, status=403)
 
     action = data.get('action')
     if action == 'create':
@@ -2615,6 +2616,18 @@ def _can_edit_report(user, report):
     if user.is_dc_level:
         dc = getattr(user, 'distribution_center', None)
         if dc and dc.pk == report.distribution_center_id:
+            return True
+    return False
+
+
+def _can_manage_feeders(user, distribution_center):
+    """Check if user can manage feeders for a distribution center.
+    Only provincial users can manage feeders for DCs under their office."""
+    if getattr(user, 'is_system_admin', False):
+        return True
+    if user.is_provincial:
+        po = getattr(user, 'provincial_office', None)
+        if po and po.pk == distribution_center.provincial_office_id:
             return True
     return False
 
@@ -3100,8 +3113,8 @@ class ProvincialReportPrintView(LoginRequiredMixin, View):
     def dispatch(self, request, *args, **kwargs):
         user = request.user
         if user.is_authenticated:
-            if not (getattr(user, 'is_system_admin', False) or user.is_provincial or user.role == 'DMD'):
-                messages.error(request, 'Only provincial managers and DMD users can print provincial reports.')
+            if not (getattr(user, 'is_system_admin', False) or user.is_provincial or user.role in ['DMD', 'MD']):
+                messages.error(request, 'Only provincial managers and DMD/MD users can print provincial reports.')
                 return redirect('dashboard')
         return super().dispatch(request, *args, **kwargs)
 
@@ -3304,8 +3317,8 @@ class ProvincialReportDetailView(LoginRequiredMixin, View):
 
     def get(self, request, pk):
         user = request.user
-        if not (getattr(user, 'is_system_admin', False) or user.is_provincial or user.role == 'DMD'):
-            messages.error(request, 'Only provincial users and DMD users can view provincial reports.')
+        if not (getattr(user, 'is_system_admin', False) or user.is_provincial or user.role in ['DMD', 'MD']):
+            messages.error(request, 'Only provincial users and DMD/MD users can view provincial reports.')
             return redirect('dashboard')
         
         # Check if print parameter is set
@@ -3545,8 +3558,8 @@ class ProvincialReportReviewView(LoginRequiredMixin, View):
 
     def get(self, request, pk):
         user = request.user
-        if not (getattr(user, 'is_system_admin', False) or user.is_provincial or user.role == 'DMD'):
-            messages.error(request, 'Only provincial users and DMD users can view provincial reports.')
+        if not (getattr(user, 'is_system_admin', False) or user.is_provincial or user.role in ['DMD', 'MD']):
+            messages.error(request, 'Only provincial users and DMD/MD users can view provincial reports.')
             return redirect('dashboard')
         
         try:
@@ -3645,7 +3658,7 @@ class ProvincialReportReviewView(LoginRequiredMixin, View):
             'total_submitted': sum(1 for item in dc_report_data if item['report_status'] != 'NO_REPORT'),
             'total_not_submitted': sum(1 for item in dc_report_data if item['report_status'] == 'NO_REPORT'),
             'month_name': month_names.get(month, ''),
-            'can_approve': user.role == 'DMD',
+            'can_approve': user.role in ['DMD', 'MD'],
         })
 
 
@@ -4723,13 +4736,13 @@ class ProvinceReportsReviewView(LoginRequiredMixin, View):
 # ─────────────────────────── DMD APPROVAL SYSTEM ───────────────────────────
 
 class DMDApprovalDashboardView(LoginRequiredMixin, View):
-    """DMD dashboard for approving/rejecting provincial reports"""
+    """DMD/MD dashboard for approving/rejecting provincial reports. System admin can also access."""
     template_name = 'nea_loss/approvals/dmd_approval_dashboard.html'
 
     def get(self, request):
         user = request.user
-        if user.role != 'DMD':
-            messages.error(request, 'Only DMD users can access this page.')
+        if user.role not in ['DMD', 'MD'] and not getattr(user, 'is_system_admin', False):
+            messages.error(request, 'Only DMD, MD users and system admin can access this page.')
             return redirect('dashboard')
 
         # Get reports submitted to DMD
@@ -4757,8 +4770,8 @@ class DMDApprovalDashboardView(LoginRequiredMixin, View):
 def dmd_approve_provincial_report(request, pk):
     """Approve a provincial report"""
     user = request.user
-    if user.role != 'DMD':
-        messages.error(request, 'Only DMD users can approve reports.')
+    if user.role not in ['DMD', 'MD'] and not getattr(user, 'is_system_admin', False):
+        messages.error(request, 'Only DMD, MD users and system admin can approve reports.')
         return redirect('dashboard')
 
     try:
@@ -4876,8 +4889,8 @@ def provincial_report_excel_export(request, pk):
 def dmd_reject_provincial_report(request, pk):
     """Reject a provincial report"""
     user = request.user
-    if user.role != 'DMD':
-        messages.error(request, 'Only DMD users can reject reports.')
+    if user.role not in ['DMD', 'MD'] and not getattr(user, 'is_system_admin', False):
+        messages.error(request, 'Only DMD, MD users and system admin can reject reports.')
         return redirect('dashboard')
 
     if request.method == 'POST':
@@ -4927,7 +4940,7 @@ def dmd_reject_provincial_report(request, pk):
 # ─────────────────────────── DMD CREATE REPORT ───────────────────────────
 
 class DMDCreateReportView(LoginRequiredMixin, View):
-    """DMD creates comprehensive report with all provinces and DCS data to calculate overall NEA loss"""
+    """DMD/MD creates comprehensive report with all provinces and DCS data to calculate overall NEA loss. System admin can also access."""
     template_name = 'nea_loss/reports/dmd_create_report.html'
 
     MONTH_CHOICES = [
@@ -4940,8 +4953,8 @@ class DMDCreateReportView(LoginRequiredMixin, View):
     def dispatch(self, request, *args, **kwargs):
         user = request.user
         if user.is_authenticated:
-            if user.role != 'DMD':
-                messages.error(request, 'Only DMD users can access this page.')
+            if user.role not in ['DMD', 'MD'] and not getattr(user, 'is_system_admin', False):
+                messages.error(request, 'Only DMD, MD users and system admin can access this page.')
                 return redirect('dashboard')
         return super().dispatch(request, *args, **kwargs)
 
@@ -5069,7 +5082,7 @@ class DMDCreateReportView(LoginRequiredMixin, View):
 
 
 class DMDCreateReportPrintView(LoginRequiredMixin, View):
-    """Print-friendly version of DMD comprehensive report"""
+    """Print-friendly version of DMD/MD comprehensive report. System admin can also access."""
     template_name = 'nea_loss/reports/dmd_create_report_print.html'
 
     MONTH_CHOICES = [
@@ -5082,8 +5095,8 @@ class DMDCreateReportPrintView(LoginRequiredMixin, View):
     def dispatch(self, request, *args, **kwargs):
         user = request.user
         if user.is_authenticated:
-            if user.role != 'DMD':
-                messages.error(request, 'Only DMD users can access this page.')
+            if user.role not in ['DMD', 'MD'] and not getattr(user, 'is_system_admin', False):
+                messages.error(request, 'Only DMD, MD users and system admin can access this page.')
                 return redirect('dashboard')
         return super().dispatch(request, *args, **kwargs)
 
@@ -5207,3 +5220,302 @@ class DMDCreateReportPrintView(LoginRequiredMixin, View):
             'month_name': month_name,
             'generated_date': timezone.now(),
         })
+
+
+# ─────────────────────────── FEEDER MANAGEMENT VIEWS ───────────────────────────
+
+class FeederListView(LoginRequiredMixin, View):
+    """DC users can view their feeders (read-only). System admin can view all feeders."""
+    template_name = 'nea_loss/feeders/list.html'
+
+    def get(self, request):
+        user = request.user
+        if getattr(user, 'is_system_admin', False):
+            # System admin can view all feeders
+            feeders = MeterPoint.objects.filter(is_active=True).order_by('distribution_center__name', 'source_type', 'name')
+            pending_requests = FeederRequest.objects.filter(status='PENDING').order_by('-created_at')
+            return render(request, self.template_name, {
+                'distribution_center': None,
+                'feeders': feeders,
+                'pending_requests': pending_requests,
+                'is_system_admin': True,
+            })
+        
+        if not user.is_dc_level or not user.distribution_center:
+            messages.error(request, 'Access denied. DC users only.')
+            return redirect('dashboard')
+
+        dc = user.distribution_center
+        feeders = MeterPoint.objects.filter(
+            distribution_center=dc,
+            is_active=True
+        ).order_by('source_type', 'name')
+
+        # Get pending requests for this DC
+        pending_requests = FeederRequest.objects.filter(
+            distribution_center=dc,
+            status='PENDING'
+        ).order_by('-created_at')
+
+        return render(request, self.template_name, {
+            'distribution_center': dc,
+            'feeders': feeders,
+            'pending_requests': pending_requests,
+        })
+
+
+class FeederRequestView(LoginRequiredMixin, View):
+    """DC users can request feeder additions/deletions. System admin can also request."""
+    template_name = 'nea_loss/feeders/request.html'
+
+    def get(self, request):
+        user = request.user
+        if getattr(user, 'is_system_admin', False):
+            # System admin can request feeder changes for any DC
+            dcs = DistributionCenter.objects.filter(is_active=True).order_by('name')
+            feeders = MeterPoint.objects.filter(is_active=True).order_by('distribution_center__name', 'source_type', 'name')
+            return render(request, self.template_name, {
+                'distribution_center': None,
+                'feeders': feeders,
+                'dcs': dcs,
+                'source_type_choices': MeterPoint.SOURCE_TYPE_CHOICES,
+                'is_system_admin': True,
+            })
+        
+        if not user.is_dc_level or not user.distribution_center:
+            messages.error(request, 'Access denied. DC users only.')
+            return redirect('dashboard')
+
+        dc = user.distribution_center
+        feeders = MeterPoint.objects.filter(
+            distribution_center=dc,
+            is_active=True
+        ).order_by('source_type', 'name')
+
+        return render(request, self.template_name, {
+            'distribution_center': dc,
+            'feeders': feeders,
+            'source_type_choices': MeterPoint.SOURCE_TYPE_CHOICES,
+        })
+
+    def post(self, request):
+        user = request.user
+        if getattr(user, 'is_system_admin', False):
+            # System admin can request feeder changes for any DC
+            dc_id = request.POST.get('distribution_center_id')
+            if not dc_id:
+                messages.error(request, 'Please select a distribution center.')
+                return redirect('feeder_request')
+            
+            dc = get_object_or_404(DistributionCenter, pk=dc_id)
+        elif not user.is_dc_level or not user.distribution_center:
+            messages.error(request, 'Access denied. DC users only.')
+            return redirect('dashboard')
+        else:
+            dc = user.distribution_center
+
+        request_type = request.POST.get('request_type')
+        feeder_name = request.POST.get('feeder_name', '').strip()
+        source_type = request.POST.get('source_type')
+        voltage_level = request.POST.get('voltage_level', '').strip()
+        multiplying_factor = request.POST.get('multiplying_factor', 1)
+        meter_point_id = request.POST.get('meter_point_id')
+        reason = request.POST.get('reason', '').strip()
+
+        if not request_type or not feeder_name or not reason:
+            messages.error(request, 'Please fill in all required fields.')
+            return redirect('feeder_request')
+
+        if request_type == 'DELETE' and not meter_point_id:
+            messages.error(request, 'Please select a feeder to delete.')
+            return redirect('feeder_request')
+
+        # Create the request
+        feeder_request = FeederRequest.objects.create(
+            distribution_center=dc,
+            requested_by=user,
+            request_type=request_type,
+            feeder_name=feeder_name,
+            source_type=source_type or '',
+            voltage_level=voltage_level,
+            multiplying_factor=multiplying_factor or 1,
+            meter_point_id=meter_point_id if request_type == 'DELETE' else None,
+            reason=reason,
+        )
+
+        # Notify provincial users
+        provincial_users = NEAUser.objects.filter(
+            provincial_office=dc.provincial_office,
+            is_active=True
+        )
+        for prov_user in provincial_users:
+            Notification.objects.create(
+                recipient=prov_user,
+                notification_type='FEEDER_REQUESTED',
+                title=f'Feeder Change Request from {dc.name}',
+                message=f'{user.full_name} has requested to {request_type.lower()} feeder "{feeder_name}". Reason: {reason}',
+            )
+
+        messages.success(request, 'Your feeder change request has been submitted to the provincial office.')
+        return redirect('feeder_list')
+
+
+class FeederManagementView(LoginRequiredMixin, View):
+    """Provincial users can manage feeders for their DCs. System admin can manage all feeders."""
+    template_name = 'nea_loss/feeders/management.html'
+
+    def get(self, request):
+        user = request.user
+        if getattr(user, 'is_system_admin', False):
+            # System admin can manage all feeders
+            dcs = DistributionCenter.objects.filter(is_active=True).order_by('name')
+            all_feeders = MeterPoint.objects.filter(
+                is_active=True
+            ).select_related('distribution_center').order_by(
+                'distribution_center__name',
+                'source_type',
+                'name'
+            )
+            feeders_by_dc = {}
+            for feeder in all_feeders:
+                dc_name = feeder.distribution_center.name
+                if dc_name not in feeders_by_dc:
+                    feeders_by_dc[dc_name] = []
+                feeders_by_dc[dc_name].append(feeder)
+            return render(request, self.template_name, {
+                'provincial_office': None,
+                'dcs': dcs,
+                'feeders_by_dc': feeders_by_dc,
+                'source_type_choices': MeterPoint.SOURCE_TYPE_CHOICES,
+                'is_system_admin': True,
+            })
+        
+        if not user.is_provincial or not user.provincial_office:
+            messages.error(request, 'Access denied. Provincial users only.')
+            return redirect('dashboard')
+
+        po = user.provincial_office
+        dcs = DistributionCenter.objects.filter(
+            provincial_office=po,
+            is_active=True
+        ).order_by('name')
+
+        # Get all feeders for all DCs under this province
+        all_feeders = MeterPoint.objects.filter(
+            distribution_center__provincial_office=po,
+            is_active=True
+        ).select_related('distribution_center').order_by(
+            'distribution_center__name',
+            'source_type',
+            'name'
+        )
+
+        # Group feeders by DC
+        feeders_by_dc = {}
+        for feeder in all_feeders:
+            dc_name = feeder.distribution_center.name
+            if dc_name not in feeders_by_dc:
+                feeders_by_dc[dc_name] = []
+            feeders_by_dc[dc_name].append(feeder)
+
+        return render(request, self.template_name, {
+            'provincial_office': po,
+            'dcs': dcs,
+            'feeders_by_dc': feeders_by_dc,
+            'source_type_choices': MeterPoint.SOURCE_TYPE_CHOICES,
+        })
+
+
+class FeederRequestsView(LoginRequiredMixin, View):
+    """Provincial users can view and approve/reject feeder requests. System admin can view and approve/reject all requests."""
+    template_name = 'nea_loss/feeders/requests.html'
+
+    def get(self, request):
+        user = request.user
+        if getattr(user, 'is_system_admin', False):
+            # System admin can view and approve/reject all feeder requests
+            requests = FeederRequest.objects.all().select_related(
+                'distribution_center', 'requested_by', 'meter_point'
+            ).order_by('-created_at')
+            return render(request, self.template_name, {
+                'provincial_office': None,
+                'requests': requests,
+                'is_system_admin': True,
+            })
+        
+        if not user.is_provincial or not user.provincial_office:
+            messages.error(request, 'Access denied. Provincial users only.')
+            return redirect('dashboard')
+
+        po = user.provincial_office
+        requests = FeederRequest.objects.filter(
+            distribution_center__provincial_office=po
+        ).select_related('distribution_center', 'requested_by', 'meter_point').order_by('-created_at')
+
+        return render(request, self.template_name, {
+            'provincial_office': po,
+            'requests': requests,
+        })
+
+
+@login_required
+@require_POST
+def feeder_request_approve(request, pk):
+    """Approve a feeder request"""
+    user = request.user
+    if not user.is_provincial and not getattr(user, 'is_system_admin', False):
+        messages.error(request, 'Access denied. Provincial users and system admin only.')
+        return redirect('dashboard')
+
+    feeder_request = get_object_or_404(FeederRequest, pk=pk)
+    
+    # Check if this request belongs to a DC under this provincial office (skip for system admin)
+    if not getattr(user, 'is_system_admin', False) and feeder_request.distribution_center.provincial_office != user.provincial_office:
+        messages.error(request, 'Access denied. This request is not under your jurisdiction.')
+        return redirect('feeder_requests')
+
+    notes = request.POST.get('notes', '')
+    feeder_request.approve(user, notes)
+
+    # Notify the requester
+    Notification.objects.create(
+        recipient=feeder_request.requested_by,
+        notification_type='FEEDER_APPROVED',
+        title=f'Feeder Change Approved',
+        message=f'Your request to {feeder_request.get_request_type_display()} feeder "{feeder_request.feeder_name}" has been approved.',
+    )
+
+    messages.success(request, f'Feeder request for "{feeder_request.feeder_name}" has been approved.')
+    return redirect('feeder_requests')
+
+
+@login_required
+@require_POST
+def feeder_request_reject(request, pk):
+    """Reject a feeder request"""
+    user = request.user
+    if not user.is_provincial and not getattr(user, 'is_system_admin', False):
+        messages.error(request, 'Access denied. Provincial users and system admin only.')
+        return redirect('dashboard')
+
+    feeder_request = get_object_or_404(FeederRequest, pk=pk)
+    
+    # Check if this request belongs to a DC under this provincial office (skip for system admin)
+    if not getattr(user, 'is_system_admin', False) and feeder_request.distribution_center.provincial_office != user.provincial_office:
+        messages.error(request, 'Access denied. This request is not under your jurisdiction.')
+        return redirect('feeder_requests')
+
+    notes = request.POST.get('notes', '')
+    feeder_request.reject(user, notes)
+
+    # Notify the requester
+    Notification.objects.create(
+        recipient=feeder_request.requested_by,
+        notification_type='FEEDER_REJECTED',
+        title=f'Feeder Change Rejected',
+        message=f'Your request to {feeder_request.get_request_type_display()} feeder "{feeder_request.feeder_name}" has been rejected. Notes: {notes}',
+    )
+
+    messages.success(request, f'Feeder request for "{feeder_request.feeder_name}" has been rejected.')
+    return redirect('feeder_requests')
+

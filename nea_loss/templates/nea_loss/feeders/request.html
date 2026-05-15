@@ -1,0 +1,99 @@
+{% extends 'nea_loss/base.html' %}
+
+{% block title %}Request Feeder Change - {{ distribution_center.name }}{% endblock %}
+
+{% block page_title %}Request Feeder Change{% endblock %}
+{% block breadcrumb %}Feeders / Request Change{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <h2>Request Feeder Change</h2>
+  </div>
+  <div class="card-body">
+    <form method="post">
+      {% csrf_token %}
+      
+      <div class="form-group">
+        <label class="form-label">Request Type *</label>
+        <select name="request_type" class="form-control" id="request_type" required onchange="toggleFormFields()">
+          <option value="">-- Select Type --</option>
+          <option value="ADD">Add New Feeder</option>
+          <option value="DELETE">Delete Existing Feeder</option>
+          <option value="MODIFY">Modify Feeder Details</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Feeder Name *</label>
+        <input type="text" name="feeder_name" class="form-control" required placeholder="Enter feeder name">
+      </div>
+
+      <div id="add_fields" style="display:none;">
+        <div class="form-group">
+          <label class="form-label">Source Type</label>
+          <select name="source_type" class="form-control">
+            <option value="">-- Select Type --</option>
+            {% for value, label in source_type_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Voltage Level</label>
+          <input type="text" name="voltage_level" class="form-control" placeholder="e.g., 11 kV, 33 kV">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Multiplying Factor</label>
+          <input type="number" name="multiplying_factor" class="form-control" value="1" step="0.001">
+        </div>
+      </div>
+
+      <div id="delete_fields" style="display:none;">
+        <div class="form-group">
+          <label class="form-label">Select Feeder to Delete *</label>
+          <select name="meter_point_id" class="form-control">
+            <option value="">-- Select Feeder --</option>
+            {% for feeder in feeders %}
+            <option value="{{ feeder.id }}">{{ feeder.name }} ({{ feeder.get_source_type_display }})</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Reason for Request *</label>
+        <textarea name="reason" class="form-control" rows="4" required placeholder="Please explain why you need this change..."></textarea>
+      </div>
+
+      <div style="margin-top: 20px;">
+        <button type="submit" class="btn btn-primary">
+          <i class="fas fa-paper-plane"></i> Submit Request
+        </button>
+        <a href="{% url 'feeder_list' %}" class="btn btn-outline">
+          <i class="fas fa-times"></i> Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function toggleFormFields() {
+  const requestType = document.getElementById('request_type').value;
+  const addFields = document.getElementById('add_fields');
+  const deleteFields = document.getElementById('delete_fields');
+  
+  addFields.style.display = 'none';
+  deleteFields.style.display = 'none';
+  
+  if (requestType === 'ADD' || requestType === 'MODIFY') {
+    addFields.style.display = 'block';
+  } else if (requestType === 'DELETE') {
+    deleteFields.style.display = 'block';
+  }
+}
+</script>
+{% endblock %}

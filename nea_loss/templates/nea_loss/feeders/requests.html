@@ -1,0 +1,83 @@
+{% extends 'nea_loss/base.html' %}
+
+{% block title %}Feeder Requests - {{ provincial_office.name }}{% endblock %}
+
+{% block page_title %}Feeder Requests{% endblock %}
+{% block breadcrumb %}Feeder Management / Requests{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <h2>Feeder Change Requests</h2>
+  </div>
+  <div class="card-body">
+    <div style="margin-bottom: 20px;">
+      <a href="{% url 'feeder_management' %}" class="btn btn-outline">
+        <i class="fas fa-arrow-left"></i> Back to Feeders
+      </a>
+    </div>
+
+    {% if requests %}
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>DC</th>
+            <th>Type</th>
+            <th>Feeder Name</th>
+            <th>Requested By</th>
+            <th>Reason</th>
+            <th>Status</th>
+            <th>Date</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for req in requests %}
+          <tr>
+            <td>{{ req.distribution_center.name }}</td>
+            <td>
+              <span class="badge {% if req.request_type == 'ADD' %}badge-approved{% elif req.request_type == 'DELETE' %}badge-rejected{% else %}badge-warning{% endif %}">
+                {{ req.get_request_type_display }}
+              </span>
+            </td>
+            <td>{{ req.feeder_name }}</td>
+            <td>{{ req.requested_by.full_name }}</td>
+            <td>{{ req.reason|truncatechars:50 }}</td>
+            <td>
+              <span class="badge {% if req.status == 'PENDING' %}badge-warning{% elif req.status == 'APPROVED' %}badge-approved{% else %}badge-rejected{% endif %}">
+                {{ req.get_status_display }}
+              </span>
+            </td>
+            <td>{{ req.created_at|date:"Y-m-d" }}</td>
+            <td>
+              {% if req.status == 'PENDING' %}
+              <form method="post" action="{% url 'feeder_request_approve' req.pk %}" style="display:inline;">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-success btn-sm" onclick="return confirm('Approve this request?')">
+                  <i class="fas fa-check"></i> Approve
+                </button>
+              </form>
+              <form method="post" action="{% url 'feeder_request_reject' req.pk %}" style="display:inline;">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Reject this request?')">
+                  <i class="fas fa-times"></i> Reject
+                </button>
+              </form>
+              {% else %}
+              <span style="color: var(--text-muted);">Completed</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div style="text-align: center; padding: 30px; color: var(--text-muted);">
+      No feeder requests found.
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

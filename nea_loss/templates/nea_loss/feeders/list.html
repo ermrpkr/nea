@@ -1,0 +1,61 @@
+{% extends 'nea_loss/base.html' %}
+
+{% block title %}View Feeders - {{ distribution_center.name }}{% endblock %}
+
+{% block page_title %}View Feeders{% endblock %}
+{% block breadcrumb %}Feeders / View Feeders{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <h2>Feeders for {{ distribution_center.name }}</h2>
+  </div>
+  <div class="card-body">
+    {% if pending_requests %}
+    <div class="alert alert-info">
+      <i class="fas fa-info-circle"></i>
+      You have {{ pending_requests|length }} pending feeder request(s). <a href="{% url 'feeder_request' %}" style="color:var(--nea-blue);">View Requests</a>
+    </div>
+    {% endif %}
+
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Voltage Level</th>
+            <th>Multiplying Factor</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for feeder in feeders %}
+          <tr>
+            <td>{{ feeder.name }}</td>
+            <td>{{ feeder.get_source_type_display }}</td>
+            <td>{{ feeder.voltage_level|default:"-" }}</td>
+            <td>{{ feeder.multiplying_factor }}</td>
+            <td>
+              <span class="badge badge-approved">Active</span>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="5" style="text-align:center; padding: 30px;">
+              No feeders found. Contact your provincial office to add feeders.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div style="margin-top: 20px;">
+      <a href="{% url 'feeder_request' %}" class="btn btn-primary">
+        <i class="fas fa-plus-circle"></i> Request Feeder Change
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}
