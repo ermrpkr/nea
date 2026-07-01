@@ -1,0 +1,419 @@
+{% extends 'nea_loss/base.html' %}
+{% load nea_filters %}
+
+{% block title %}DC History{% endblock %}
+{% block page_title %}Loss Report History{% endblock %}
+{% block breadcrumb %}DCS Information &rsaquo; History{% endblock %}
+
+{% block content %}
+<style>
+.history-filters {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 14px;
+    align-items: end;
+}
+.history-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 14px;
+    margin-bottom: 20px;
+}
+.history-summary .box {
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 14px 16px;
+    text-align: center;
+}
+.history-summary .box .val {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--nea-blue);
+}
+.history-summary .box .lbl {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-top: 4px;
+}
+.fy-group {
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    margin-bottom: 12px;
+    overflow: hidden;
+    background: white;
+}
+.fy-group-header {
+    padding: 12px 18px;
+    background: linear-gradient(90deg, #1B4F72, #2E86C1);
+    color: white;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    user-select: none;
+}
+.fy-group-header h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+}
+.fy-group-body {
+    display: none;
+}
+.fy-group.open .fy-group-body {
+    display: block;
+}
+.history-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.history-table th {
+    background: #F7FAFC;
+    padding: 10px 12px;
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-color);
+}
+.history-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #F1F5F9;
+}
+.history-table tr:hover td {
+    background: #FAFCFF;
+}
+</style>
+
+<div class="container-fluid">
+    <!-- Summary -->
+    <div class="history-summary">
+        <div class="box">
+            <div class="val">{{ summary.count }}</div>
+            <div class="lbl">Records</div>
+        </div>
+        <div class="box">
+            <div class="val">{{ summary.total_received|floatformat:0 }}</div>
+            <div class="lbl">Total Received (kWh)</div>
+        </div>
+        <div class="box">
+            <div class="val">{{ summary.total_loss|floatformat:0 }}</div>
+            <div class="lbl">Total Loss (kWh)</div>
+        </div>
+        <div class="box">
+            <div class="val">{{ summary.avg_loss_pct }}%</div>
+            <div class="lbl">Avg Loss %</div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h2 style="margin:0;font-size:15px;"><i class="fas fa-filter"></i> Filter History</h2>
+        </div>
+        <div class="card-body">
+            <form method="get" class="history-filters">
+                {% if dc_list.count > 1 %}
+                <div>
+                    <label class="form-label">Distribution Center</label>
+                    <select name="dc" class="form-control">
+                        <option value="">All DCs</option>
+                        {% for d in dc_list %}
+                        <option value="{{ d.pk }}" {% if filters.dc_id == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+                <div>
+                    <label class="form-label">Fiscal Year</label>
+                    <select name="fy" class="form-control">
+                        <option value="">All years</option>
+                        {% for fy in fiscal_years %}
+                        <option value="{{ fy.pk }}" {% if filters.fy_id == fy.pk|stringformat:"s" %}selected{% endif %}>
+                            {{ fy.year_bs }}{% if fy.is_active %} (Active){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">Month</label>
+                    <select name="month" class="form-control">
+                        <option value="">All months</option>
+                        {% for num, name in months_list %}
+                        <option value="{{ num }}" {% if filters.month == num|stringformat:"s" %}selected{% endif %}>{{ name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">From Date</label>
+                    <input type="date" name="start_date" class="form-control" value="{{ filters.start_date }}">
+                </div>
+                <div>
+                    <label class="form-label">To Date</label>
+                    <input type="date" name="end_date" class="form-control" value="{{ filters.end_date }}">
+                </div>
+                <div>
+                    <label class="form-label">View</label>
+                    <select name="view" class="form-control">
+                        <option value="grouped" {% if filters.view == 'grouped' %}selected{% endif %}>By fiscal year</option>
+                        <option value="flat" {% if filters.view == 'flat' %}selected{% endif %}>Flat list</option>
+                    </select>
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Apply</button>
+                    <a href="{% url 'dc_history' %}" class="btn btn-outline">Clear</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Charts -->
+    {% if history_entries %}
+    <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:16px;margin-bottom:20px;">
+        <div class="card">
+            <div class="card-header"><h2 style="margin:0;font-size:14px;"><i class="fas fa-chart-line"></i> Loss % Trend</h2></div>
+            <div class="card-body" style="height:220px;"><canvas id="lossTrendChart"></canvas></div>
+        </div>
+        <div class="card">
+            <div class="card-header"><h2 style="margin:0;font-size:14px;"><i class="fas fa-chart-bar"></i> DC Comparison (Loss %)</h2></div>
+            <div class="card-body" style="height:220px;"><canvas id="dcComparisonChart"></canvas></div>
+        </div>
+        <div class="card">
+            <div class="card-header"><h2 style="margin:0;font-size:14px;"><i class="fas fa-chart-pie"></i> Energy Distribution</h2></div>
+            <div class="card-body" style="height:220px;"><canvas id="energyDistributionChart"></canvas></div>
+        </div>
+        <div class="card">
+            <div class="card-header"><h2 style="margin:0;font-size:14px;"><i class="fas fa-chart-area"></i> Year-over-Year Trend</h2></div>
+            <div class="card-body" style="height:220px;"><canvas id="yearlyTrendChart"></canvas></div>
+        </div>
+        <div class="card" style="grid-column: span 2;">
+            <div class="card-header"><h2 style="margin:0;font-size:14px;"><i class="fas fa-chart-bar"></i> Received vs Utilised Comparison (kWh)</h2></div>
+            <div class="card-body" style="height:220px;"><canvas id="receivedUtilisedChart"></canvas></div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Data -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h2 style="margin:0;font-size:15px;"><i class="fas fa-history"></i> Approved Report History</h2>
+            {% if active_fy and not filters.fy_id %}
+            <span class="badge badge-draft" style="font-size:11px;">Showing FY {{ active_fy.year_bs }} by default</span>
+            {% endif %}
+        </div>
+        <div class="card-body">
+            {% if history_entries %}
+                {% if filters.view == 'grouped' and history_by_fy %}
+                    {% for fy_label, entries in history_by_fy.items %}
+                    <div class="fy-group {% if forloop.first %}open{% endif %}">
+                        <div class="fy-group-header" onclick="this.parentElement.classList.toggle('open')">
+                            <h3>Fiscal Year {{ fy_label }} <span style="opacity:0.8;font-weight:400;">({{ entries|length }} month{{ entries|length|pluralize }})</span></h3>
+                            <i class="fas fa-chevron-down"></i>
+                        </div>
+                        <div class="fy-group-body">
+                            <div class="table-wrap">
+                                {% include 'nea_loss/dcs_history/_history_table.html' with entries=entries show_dc_column=show_dc_column %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                <div class="table-wrap">
+                    {% include 'nea_loss/dcs_history/_history_table.html' with entries=history_entries show_dc_column=show_dc_column %}
+                </div>
+                {% endif %}
+            {% else %}
+            <div class="text-center py-5">
+                <i class="fas fa-history text-muted" style="font-size:40px;opacity:0.25;"></i>
+                <p class="text-muted mt-3 mb-1">No history records match your filters.</p>
+                <p class="text-muted" style="font-size:13px;">History is created when provincial office approves DC loss reports.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% if history_entries %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const chartPayload = {{ chart_data_json|safe }};
+const monthlyTrendData = chartPayload.monthly_trend || [];
+const dcComparisonData = chartPayload.dc_comparison || [];
+const energyDistribution = chartPayload.energy_distribution || {};
+const yearlyTrendData = chartPayload.yearly_trend || [];
+const provinceComparisonData = chartPayload.province_comparison || [];
+
+const lossTrendCtx = document.getElementById('lossTrendChart');
+if (lossTrendCtx && monthlyTrendData.length) {
+    new Chart(lossTrendCtx.getContext('2d'), {
+        type: 'line',
+        data: {
+            labels: monthlyTrendData.map(d => d.month + ' ' + d.fiscal_year),
+            datasets: [{
+                label: 'Loss %',
+                data: monthlyTrendData.map(d => d.loss_percent),
+                borderColor: '#C0392B',
+                backgroundColor: 'rgba(192, 57, 43, 0.08)',
+                fill: true,
+                tension: 0.4,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true, ticks: { callback: v => v + '%' } } },
+        },
+    });
+}
+
+const dcComparisonCtx = document.getElementById('dcComparisonChart');
+if (dcComparisonCtx && dcComparisonData.length) {
+    new Chart(dcComparisonCtx.getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: dcComparisonData.map(d => d.name),
+            datasets: [{
+                label: 'Loss %',
+                data: dcComparisonData.map(d => d.loss_percent),
+                backgroundColor: '#1B4F72',
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `Loss %: ${context.parsed.y}%`;
+                        }
+                    }
+                }
+            },
+            scales: { y: { beginAtZero: true, ticks: { callback: v => v + '%' } } },
+        },
+    });
+}
+
+const energyDistCtx = document.getElementById('energyDistributionChart');
+if (energyDistCtx && energyDistribution.received > 0) {
+    new Chart(energyDistCtx.getContext('2d'), {
+        type: 'doughnut',
+        data: {
+            labels: ['Utilised', 'Loss'],
+            datasets: [{
+                data: [energyDistribution.utilised, energyDistribution.loss],
+                backgroundColor: ['#27AE60', '#E74C3C'],
+                borderWidth: 2,
+                borderColor: '#ffffff',
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { padding: 15, usePointStyle: true }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const value = context.parsed;
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = ((value / total) * 100).toFixed(1);
+                            return `${context.label}: ${value.toFixed(0)} kWh (${percentage}%)`;
+                        }
+                    }
+                }
+            }
+        },
+    });
+}
+
+const yearlyTrendCtx = document.getElementById('yearlyTrendChart');
+if (yearlyTrendCtx && yearlyTrendData.length) {
+    new Chart(yearlyTrendCtx.getContext('2d'), {
+        type: 'line',
+        data: {
+            labels: yearlyTrendData.map(d => d.fiscal_year),
+            datasets: [{
+                label: 'Loss %',
+                data: yearlyTrendData.map(d => d.loss_percent),
+                borderColor: '#8E44AD',
+                backgroundColor: 'rgba(142, 68, 173, 0.08)',
+                fill: true,
+                tension: 0.4,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true, ticks: { callback: v => v + '%' } } },
+        },
+    });
+}
+
+const receivedUtilisedCtx = document.getElementById('receivedUtilisedChart');
+if (receivedUtilisedCtx && monthlyTrendData.length) {
+    new Chart(receivedUtilisedCtx.getContext('2d'), {
+        type: 'line',
+        data: {
+            labels: monthlyTrendData.map(d => d.month + ' ' + d.fiscal_year),
+            datasets: [
+                {
+                    label: 'Received (kWh)',
+                    data: monthlyTrendData.map(d => d.total_received),
+                    borderColor: '#3498db',
+                    backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                    fill: true,
+                    tension: 0.4,
+                },
+                {
+                    label: 'Utilised (kWh)',
+                    data: monthlyTrendData.map(d => d.total_utilised),
+                    borderColor: '#27AE60',
+                    backgroundColor: 'rgba(39, 174, 96, 0.1)',
+                    fill: true,
+                    tension: 0.4,
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: { padding: 15, usePointStyle: true }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.dataset.label}: ${context.parsed.y.toFixed(0)} kWh`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return (value / 1000000).toFixed(1) + 'M';
+                        }
+                    }
+                }
+            }
+        },
+    });
+}
+</script>
+{% endif %}
+{% endblock %}

@@ -27,7 +27,8 @@ from .models import (
     ConsumerCategory, EnergyUtilisation, ConsumerCount, FiscalYear,
     DistributionCenter, ProvincialOffice, Province, Notification, AuditLog,
     ProvincialReport, MonthlyMeterPointStatus, DCYearlyTarget, DCMonthlyTarget, Message,
-    DCReportOverride, FeederRequest,
+    DCReportOverride, FeederRequest, DCSDetail, DCSOfficial, DCSFeeder, DCSConsumerType,
+    DCSDetailEditRequest, DCHistoryEntry,
 )
 
 
@@ -613,6 +614,8 @@ class DashboardView(LoginRequiredMixin, View):
 
             import_types = {'SUBSTATION', 'FEEDER_11KV', 'FEEDER_33KV', 'INTERBRANCH', 'IPP', 'ENERGY_IMPORT'}
             export_types = {'EXPORT_DC', 'EXPORT_IPP', 'ENERGY_EXPORT'}
+            
+            # Get all active feeders first
             all_feeders = list(
                 MeterPoint.objects.filter(
                     distribution_center=dc,
@@ -638,9 +641,25 @@ class DashboardView(LoginRequiredMixin, View):
 
                 prov_target = prov_targets
 
+                # Get meter points that have readings in this month or prior months of this fiscal year
+                # This ensures feeders only appear from the month they were first used onwards
+                if active_fy:
+                    meter_points_with_readings = set(
+                        MeterReading.objects.filter(
+                            meter_point__distribution_center=dc,
+                            monthly_data__report__fiscal_year=active_fy,
+                            monthly_data__month__lte=md.month
+                        ).values_list('meter_point_id', flat=True).distinct()
+                    )
+                    # Filter all_feeders to only include those with readings in this month or prior months
+                    month_feeders = [mp for mp in all_feeders if mp.pk in meter_points_with_readings]
+                else:
+                    # Fallback if no fiscal year: show all active feeders
+                    month_feeders = all_feeders
+
                 # Build feeder list for this month
                 feeders = []
-                for mp in all_feeders:
+                for mp in month_feeders:
                     if (md.pk, mp.pk) in deleted_pairs:
                         continue
                     r = reading_map.get((md.pk, mp.pk))
@@ -1260,12 +1279,36 @@ class MonthlyDataView(LoginRequiredMixin, View):
             # Approved report: show feeders that had readings, BUT still respect
             # per-month soft-deletes — if a feeder was deleted for THIS specific month,
             # hide it from this month's view (other months are unaffected).
-            meter_points = MeterPoint.objects.filter(
-                distribution_center=report.distribution_center,
-                is_active=True
-            ).exclude(
-                pk__in=inactive_for_month
-            ).order_by('source_type', 'name')
+            # Also, only show feeders that existed at the time of this report's month
+            # (feeders added in later months should not appear in earlier months' reports)
+            
+            # Get meter points that have readings in this month or prior months of this fiscal year
+            # This ensures feeders only appear from the month they were first used onwards
+            if report.fiscal_year:
+                # Meter points that have readings in this month or any prior month of this fiscal year
+                meter_points_with_readings = set(
+                    MeterReading.objects.filter(
+                        meter_point__distribution_center=report.distribution_center,
+                        monthly_data__report__fiscal_year=report.fiscal_year,
+                        monthly_data__month__lte=month
+                    ).values_list('meter_point_id', flat=True).distinct()
+                )
+                
+                meter_points = MeterPoint.objects.filter(
+                    distribution_center=report.distribution_center,
+                    is_active=True,
+                    pk__in=meter_points_with_readings
+                ).exclude(
+                    pk__in=inactive_for_month
+                ).order_by('source_type', 'name')
+            else:
+                # Fallback if no fiscal year: show all active meter points
+                meter_points = MeterPoint.objects.filter(
+                    distribution_center=report.distribution_center,
+                    is_active=True
+                ).exclude(
+                    pk__in=inactive_for_month
+                ).order_by('source_type', 'name')
         elif not monthly:
             # No monthly data yet — show all active meter points
             meter_points = MeterPoint.objects.filter(
@@ -1352,6 +1395,28 @@ class MonthlyDataView(LoginRequiredMixin, View):
 
         months_nav = list(month_names.items())
         
+        # Get distribution centers for cross-DC energy transfer dropdown
+        # Only show DCs whose previous month report is approved (or if it's Shrawan, show all)
+        if month > 1:
+            previous_month = month - 1
+            # Get DC IDs that have an approved report for the previous month in the same fiscal year
+            eligible_dc_ids = set(DistributionCenter.objects.filter(
+                is_active=True,
+                loss_reports__fiscal_year=report.fiscal_year,
+                loss_reports__month=previous_month,
+                loss_reports__status='APPROVED'
+            ).values_list('pk', flat=True))
+            # Also include the current DC itself
+            eligible_dc_ids.add(report.distribution_center.pk)
+            # Query with the combined IDs
+            all_dcs = DistributionCenter.objects.filter(
+                pk__in=eligible_dc_ids,
+                is_active=True
+            ).order_by('name')
+        else:
+            # For Shrawan (first month), show all active DCs
+            all_dcs = DistributionCenter.objects.filter(is_active=True).order_by('name')
+        
         return render(request, self.template_name, {
             'report': report,
             'monthly': monthly,
@@ -1372,6 +1437,7 @@ class MonthlyDataView(LoginRequiredMixin, View):
             'single_reading_ids': list(single_reading_ids),  # ENERGY_IMPORT / ENERGY_EXPORT
             'dc_yearly_target': dc_yearly_target,
             'approved_override': approved_override if month > 1 else None,
+            'all_dcs': all_dcs,  # For cross-DC energy transfer dropdown
         })
 
 
@@ -1434,6 +1500,7 @@ def report_approve(request, pk):
         if approval_remarks:
             report.remarks = approval_remarks
         report.save()
+        record_dcs_history_snapshot(report)
         messages.success(request, 'Report approved successfully.')
     return redirect('report_detail', pk=pk)
 
@@ -1780,6 +1847,238 @@ class ComparisonView(LoginRequiredMixin, View):
             'datasets': datasets,
             'month_names': MONTH_NAMES,
             'has_data': bool(datasets),
+        })
+
+
+class ManagerialAnalyticsView(LoginRequiredMixin, View):
+    """DMD/MD Managerial Analytics Dashboard with visualizations and DC comparisons"""
+    template_name = 'nea_loss/analytics/managerial.html'
+
+    def dispatch(self, request, *args, **kwargs):
+        user = request.user
+        if user.is_authenticated:
+            if not (getattr(user, 'is_system_admin', False) or user.is_top_management):
+                messages.error(request, 'Only top management (MD/DMD/Director) can access managerial analytics.')
+                return redirect('dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request):
+        user = request.user
+        active_fy = FiscalYear.objects.filter(is_active=True).first()
+        selected_dc_id = request.GET.get('dc')
+        selected_province_id = request.GET.get('province')
+        
+        MONTH_NAMES = {
+            1:'Shrawan',2:'Bhadra',3:'Ashwin',4:'Kartik',
+            5:'Mangsir',6:'Poush',7:'Magh',8:'Falgun',
+            9:'Chaitra',10:'Baisakh',11:'Jestha',12:'Ashadh'
+        }
+
+        # Get all approved reports for active fiscal year
+        all_reports = LossReport.objects.filter(
+            fiscal_year=active_fy, status='APPROVED'
+        ).select_related('distribution_center', 'distribution_center__provincial_office') if active_fy else LossReport.objects.none()
+        
+        # Filter by province if selected
+        if selected_province_id:
+            all_reports = all_reports.filter(distribution_center__provincial_office_id=selected_province_id)
+
+        # Overall statistics
+        total_received = all_reports.aggregate(s=Sum('total_received_kwh'))['s'] or 0
+        total_utilised = all_reports.aggregate(s=Sum('total_utilised_kwh'))['s'] or 0
+        total_loss = float(total_received) - float(total_utilised)
+        overall_loss_pct = round(total_loss / float(total_received) * 100, 2) if total_received else 0
+
+        # DC-wise analytics - filter by province if selected
+        dc_queryset = DistributionCenter.objects.filter(is_active=True)
+        if selected_province_id:
+            dc_queryset = dc_queryset.filter(provincial_office_id=selected_province_id)
+        
+        dc_analytics = []
+        for dc in dc_queryset.order_by('name'):
+            dc_reports = all_reports.filter(distribution_center=dc)
+            if dc_reports.exists():
+                dc_received = dc_reports.aggregate(s=Sum('total_received_kwh'))['s'] or 0
+                dc_utilised = dc_reports.aggregate(s=Sum('total_utilised_kwh'))['s'] or 0
+                dc_loss = float(dc_received) - float(dc_utilised)
+                dc_loss_pct = round(dc_loss / float(dc_received) * 100, 2) if dc_received else 0
+                
+                # Get consumer counts for this DC
+                total_consumers = 0
+                for report in dc_reports:
+                    for md in report.monthly_data.all():
+                        for cc in md.consumer_counts.all():
+                            total_consumers += cc.count
+                
+                dc_analytics.append({
+                    'id': dc.id,
+                    'name': dc.name,
+                    'code': dc.code,
+                    'province': dc.provincial_office.name if dc.provincial_office else 'N/A',
+                    'received': float(dc_received),
+                    'utilised': float(dc_utilised),
+                    'loss': dc_loss,
+                    'loss_pct': dc_loss_pct,
+                    'consumers': total_consumers,
+                })
+
+        # Province-wise analytics for pie chart
+        province_analytics = []
+        for po in ProvincialOffice.objects.all():
+            po_reports = all_reports.filter(distribution_center__provincial_office=po)
+            if po_reports.exists():
+                po_received = po_reports.aggregate(s=Sum('total_received_kwh'))['s'] or 0
+                po_utilised = po_reports.aggregate(s=Sum('total_utilised_kwh'))['s'] or 0
+                po_loss = float(po_received) - float(po_utilised)
+                po_loss_pct = round(po_loss / float(po_received) * 100, 2) if po_received else 0
+                province_analytics.append({
+                    'name': po.name,
+                    'received': float(po_received),
+                    'loss': po_loss,
+                    'loss_pct': po_loss_pct,
+                })
+
+        # Monthly trend data
+        monthly_trend = {}
+        for report in all_reports:
+            for md in report.monthly_data.all():
+                m = md.month
+                if m not in monthly_trend:
+                    monthly_trend[m] = {'received': 0, 'utilised': 0, 'loss': 0}
+                monthly_trend[m]['received'] += float(md.net_energy_received)
+                monthly_trend[m]['utilised'] += float(md.total_energy_utilised)
+                monthly_trend[m]['loss'] += float(md.loss_unit)
+
+        # Sort monthly trend by month number
+        monthly_trend_sorted = []
+        for m in sorted(monthly_trend.keys()):
+            monthly_trend_sorted.append({
+                'month': MONTH_NAMES.get(m, ''),
+                'month_num': m,
+                'received': monthly_trend[m]['received'],
+                'utilised': monthly_trend[m]['utilised'],
+                'loss': monthly_trend[m]['loss'],
+                'loss_pct': round(monthly_trend[m]['loss'] / monthly_trend[m]['received'] * 100, 2) if monthly_trend[m]['received'] else 0,
+            })
+
+        # DC comparison data (if a DC is selected)
+        selected_dc_data = None
+        dc_comparison = []
+        if selected_dc_id:
+            selected_dc = DistributionCenter.objects.filter(id=selected_dc_id).first()
+            if selected_dc:
+                selected_dc_reports = all_reports.filter(distribution_center=selected_dc)
+                if selected_dc_reports.exists():
+                    # Get selected DC's data
+                    sel_received = selected_dc_reports.aggregate(s=Sum('total_received_kwh'))['s'] or 0
+                    sel_utilised = selected_dc_reports.aggregate(s=Sum('total_utilised_kwh'))['s'] or 0
+                    sel_loss = float(sel_received) - float(sel_utilised)
+                    sel_loss_pct = round(sel_loss / float(sel_received) * 100, 2) if sel_received else 0
+                    
+                    # Get selected DC's consumer counts
+                    sel_consumers = 0
+                    for report in selected_dc_reports:
+                        for md in report.monthly_data.all():
+                            for cc in md.consumer_counts.all():
+                                sel_consumers += cc.count
+                    
+                    selected_dc_data = {
+                        'id': selected_dc.id,
+                        'name': selected_dc.name,
+                        'code': selected_dc.code,
+                        'province': selected_dc.provincial_office.name if selected_dc.provincial_office else 'N/A',
+                        'received': float(sel_received),
+                        'utilised': float(sel_utilised),
+                        'loss': sel_loss,
+                        'loss_pct': sel_loss_pct,
+                        'consumers': sel_consumers,
+                    }
+                    
+                    # Compare with other DCs
+                    for dc_data in dc_analytics:
+                        if dc_data['id'] != selected_dc.id:
+                            dc_comparison.append({
+                                'name': dc_data['name'],
+                                'loss_pct': dc_data['loss_pct'],
+                                'loss_diff': round(dc_data['loss_pct'] - sel_loss_pct, 2),
+                                'received': dc_data['received'],
+                                'consumers': dc_data['consumers'],
+                            })
+                    
+                    # Sort by loss difference
+                    dc_comparison.sort(key=lambda x: x['loss_diff'])
+
+        # Top and bottom performers
+        sorted_by_loss = sorted(dc_analytics, key=lambda x: x['loss_pct'])
+        top_performers = sorted_by_loss[:5]
+        bottom_performers = sorted_by_loss[-5:]
+
+        # Get all provinces for filter dropdown
+        all_provinces = ProvincialOffice.objects.all().order_by('name')
+        
+        # Add DC history data (year-over-year trends)
+        dc_history = []
+        if selected_dc_id:
+            selected_dc = DistributionCenter.objects.filter(id=selected_dc_id).first()
+            if selected_dc:
+                # Get all fiscal years for this DC
+                all_fiscal_years = FiscalYear.objects.all().order_by('-year_bs')
+                for fy in all_fiscal_years:
+                    fy_reports = LossReport.objects.filter(
+                        distribution_center=selected_dc,
+                        fiscal_year=fy,
+                        status='APPROVED'
+                    )
+                    if fy_reports.exists():
+                        fy_received = fy_reports.aggregate(s=Sum('total_received_kwh'))['s'] or 0
+                        fy_utilised = fy_reports.aggregate(s=Sum('total_utilised_kwh'))['s'] or 0
+                        fy_loss = float(fy_received) - float(fy_utilised)
+                        fy_loss_pct = round(fy_loss / float(fy_received) * 100, 2) if fy_received else 0
+                        
+                        # Monthly breakdown for this fiscal year
+                        monthly_breakdown = []
+                        for report in fy_reports.order_by('month'):
+                            # Get monthly data for this report
+                            monthly_data = report.monthly_data.filter(month=report.month).first()
+                            monthly_loss_pct = 0
+                            if monthly_data and monthly_data.net_energy_received > 0:
+                                monthly_loss_pct = float(monthly_data.loss_unit / monthly_data.net_energy_received * 100)
+                            
+                            monthly_breakdown.append({
+                                'month': MONTH_NAMES.get(report.month, ''),
+                                'month_num': report.month,
+                                'loss_pct': monthly_loss_pct,
+                                'received': float(report.total_received_kwh),
+                                'loss': float(report.total_loss_kwh),
+                            })
+                        
+                        dc_history.append({
+                            'fiscal_year': fy.year_bs,
+                            'received': float(fy_received),
+                            'utilised': float(fy_utilised),
+                            'loss': fy_loss,
+                            'loss_pct': fy_loss_pct,
+                            'monthly_breakdown': monthly_breakdown,
+                        })
+        
+        return render(request, self.template_name, {
+            'active_fy': active_fy,
+            'total_received': float(total_received),
+            'total_utilised': float(total_utilised),
+            'total_loss': total_loss,
+            'overall_loss_pct': overall_loss_pct,
+            'dc_analytics': dc_analytics,
+            'province_analytics': province_analytics,
+            'monthly_trend': monthly_trend_sorted,
+            'selected_dc_data': selected_dc_data,
+            'dc_comparison': dc_comparison,
+            'top_performers': top_performers,
+            'bottom_performers': bottom_performers,
+            'selected_dc_id': selected_dc_id,
+            'selected_province_id': selected_province_id,
+            'all_provinces': all_provinces,
+            'dc_history': dc_history,
+            'target_loss_pct': float(active_fy.loss_target_percent) if active_fy else 3.35,
         })
 
 
@@ -2219,10 +2518,104 @@ def api_save_meter_readings(request):
         import_types = {'SUBSTATION', 'FEEDER_11KV', 'FEEDER_33KV', 'INTERBRANCH', 'IPP', 'ENERGY_IMPORT'}
         export_types = {'EXPORT_DC', 'EXPORT_IPP', 'ENERGY_EXPORT'}
 
+        # Cross-DC validation for energy import/export
         for r in readings:
             mp = get_object_or_404(MeterPoint, pk=r['meter_point_id'])
             if mp.distribution_center_id != monthly.report.distribution_center_id:
                 return JsonResponse({'error': 'Invalid meter point'}, status=400)
+
+            # Validate cross-DC energy transfer
+            if mp.source_type == 'ENERGY_IMPORT' and (mp.linked_distribution_center or mp.linked_distribution_center_name):
+                # Determine linked DC - use foreign key if available, otherwise search by name
+                linked_dc = mp.linked_distribution_center
+                linked_dc_name = mp.linked_distribution_center_name
+                
+                if not linked_dc and linked_dc_name:
+                    # Try to find DC by name (case-insensitive)
+                    linked_dc = DistributionCenter.objects.filter(name__iexact=linked_dc_name).first()
+                
+                if linked_dc:
+                    # Check if the linked DC has a corresponding ENERGY_EXPORT with the same name
+                    linked_mp = MeterPoint.objects.filter(
+                        distribution_center=linked_dc,
+                        name=mp.name,
+                        source_type__in=['ENERGY_EXPORT', 'EXPORT_DC'],
+                        is_active=True
+                    ).first()
+                    
+                    if not linked_mp:
+                        return JsonResponse({
+                            'error': f'Cross-DC validation failed: {linked_dc.name} must have an ENERGY_EXPORT/EXPORT_DC meter point named "{mp.name}" to match this ENERGY_IMPORT.'
+                        }, status=400)
+                    
+                    # Check if the linked DC has entered a reading for the same month
+                    linked_monthly = MonthlyLossData.objects.filter(
+                        report__distribution_center=linked_dc,
+                        report__fiscal_year=monthly.report.fiscal_year,
+                        month=monthly.month
+                    ).first()
+                    
+                    if linked_monthly:
+                        linked_reading = MeterReading.objects.filter(
+                            monthly_data=linked_monthly,
+                            meter_point=linked_mp
+                        ).first()
+                        
+                        if linked_reading:
+                            current_reading_value = decimal.Decimal(str(r['present_reading'])) * decimal.Decimal(str(r.get('multiplying_factor', mp.multiplying_factor)))
+                            linked_reading_value = linked_reading.unit_kwh
+                            
+                            # Allow small tolerance for floating point differences
+                            if abs(current_reading_value - linked_reading_value) > decimal.Decimal('0.01'):
+                                return JsonResponse({
+                                    'error': f'Cross-DC validation failed: Reading for "{mp.name}" does not match. {mp.distribution_center.name} entered {current_reading_value} kWh, but {linked_dc.name} entered {linked_reading_value} kWh. Both must be the same.'
+                                }, status=400)
+            
+            elif mp.source_type in ['ENERGY_EXPORT', 'EXPORT_DC'] and (mp.linked_distribution_center or mp.linked_distribution_center_name):
+                # Determine linked DC - use foreign key if available, otherwise search by name
+                linked_dc = mp.linked_distribution_center
+                linked_dc_name = mp.linked_distribution_center_name
+                
+                if not linked_dc and linked_dc_name:
+                    # Try to find DC by name (case-insensitive)
+                    linked_dc = DistributionCenter.objects.filter(name__iexact=linked_dc_name).first()
+                
+                if linked_dc:
+                    # Check if the linked DC has a corresponding ENERGY_IMPORT with the same name
+                    linked_mp = MeterPoint.objects.filter(
+                        distribution_center=linked_dc,
+                        name=mp.name,
+                        source_type='ENERGY_IMPORT',
+                        is_active=True
+                    ).first()
+                    
+                    if not linked_mp:
+                        return JsonResponse({
+                            'error': f'Cross-DC validation failed: {linked_dc.name} must have an ENERGY_IMPORT meter point named "{mp.name}" to match this ENERGY_EXPORT.'
+                        }, status=400)
+                    
+                    # Check if the linked DC has entered a reading for the same month
+                    linked_monthly = MonthlyLossData.objects.filter(
+                        report__distribution_center=linked_dc,
+                        report__fiscal_year=monthly.report.fiscal_year,
+                        month=monthly.month
+                    ).first()
+                    
+                    if linked_monthly:
+                        linked_reading = MeterReading.objects.filter(
+                            monthly_data=linked_monthly,
+                            meter_point=linked_mp
+                        ).first()
+                        
+                        if linked_reading:
+                            current_reading_value = decimal.Decimal(str(r['present_reading'])) * decimal.Decimal(str(r.get('multiplying_factor', mp.multiplying_factor)))
+                            linked_reading_value = linked_reading.unit_kwh
+                            
+                            # Allow small tolerance for floating point differences
+                            if abs(current_reading_value - linked_reading_value) > decimal.Decimal('0.01'):
+                                return JsonResponse({
+                                    'error': f'Cross-DC validation failed: Reading for "{mp.name}" does not match. {mp.distribution_center.name} entered {current_reading_value} kWh, but {linked_dc.name} entered {linked_reading_value} kWh. Both must be the same.'
+                                }, status=400)
 
             if mp.is_single_reading:
                 # ENERGY_IMPORT / ENERGY_EXPORT: only present_reading matters; previous=0
@@ -2384,16 +2777,22 @@ def api_manage_meter_point(request):
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
     report = get_object_or_404(LossReport, pk=data.get('report_pk'))
-    # Only provincial users (or system admin) can manage feeders
-    if not _can_manage_feeders(request.user, report.distribution_center):
-        return JsonResponse({'error': 'Permission denied. Only provincial users can manage feeders.'}, status=403)
-
+    
     action = data.get('action')
+    source_type = data.get('source_type')
+    
+    # Only provincial users (or system admin) can manage feeders
+    # DC users can manage ENERGY_IMPORT and ENERGY_EXPORT for their own DC
+    if not _can_manage_feeders(request.user, report.distribution_center, source_type):
+        if source_type in ['ENERGY_IMPORT', 'ENERGY_EXPORT']:
+            return JsonResponse({'error': 'Permission denied. DC users can only add ENERGY_IMPORT and ENERGY_EXPORT types. Other types require provincial approval.'}, status=403)
+        else:
+            return JsonResponse({'error': 'Permission denied. Only provincial users can manage this feeder type.'}, status=403)
+
     if action == 'create':
         name = (data.get('name') or '').strip()
         if not name:
             return JsonResponse({'error': 'Name is required'}, status=400)
-        source_type = data.get('source_type')
         valid_types = {k for k, _ in MeterPoint.SOURCE_TYPE_CHOICES}
         if source_type not in valid_types:
             return JsonResponse({'error': 'Invalid source type'}, status=400)
@@ -2405,6 +2804,13 @@ def api_manage_meter_point(request):
             9: 'Chaitra', 10: 'Baisakh', 11: 'Jestha', 12: 'Ashadh'
         }
         
+        # Handle linked DC for cross-DC energy transfer
+        linked_dc_name = data.get('linked_distribution_center_name', '').strip()
+        linked_dc = None
+        if linked_dc_name:
+            # Try to find exact match by name
+            linked_dc = DistributionCenter.objects.filter(name__iexact=linked_dc_name).first()
+        
         mp = MeterPoint.objects.create(
             distribution_center=report.distribution_center,
             name=name,
@@ -2413,7 +2819,65 @@ def api_manage_meter_point(request):
             voltage_level=(data.get('voltage_level') or '').strip()[:20],
             multiplying_factor=decimal.Decimal(str(data.get('multiplying_factor') or 1)),
             is_active=True,
+            connection_source=(data.get('connection_source') or '').strip()[:200],
+            linked_distribution_center=linked_dc,
+            linked_distribution_center_name=linked_dc_name,
         )
+        
+        # Auto-create corresponding meter point in linked DC if requested
+        auto_create_linked = data.get('auto_create_linked', False)
+        if auto_create_linked and linked_dc and source_type in ['ENERGY_IMPORT', 'ENERGY_EXPORT']:
+            # Validate that the linked DC has a report for the same fiscal year and month
+            linked_report = LossReport.objects.filter(
+                distribution_center=linked_dc,
+                fiscal_year=report.fiscal_year,
+                month=report.month
+            ).first()
+            
+            if not linked_report:
+                month_name = month_names.get(report.month, '')
+                return JsonResponse({
+                    'error': f'Cannot create linked record. {linked_dc.name} does not have a report for {month_name} month in fiscal year {report.fiscal_year.year_bs}. Please ensure the linked DC has created a report for the same month.'
+                }, status=400)
+            
+            # Determine the opposite type
+            opposite_type = 'ENERGY_EXPORT' if source_type == 'ENERGY_IMPORT' else 'ENERGY_IMPORT'
+            
+            # Check if the opposite meter point already exists
+            existing_opposite = MeterPoint.objects.filter(
+                distribution_center=linked_dc,
+                name=name,
+                source_type=opposite_type,
+                is_active=True
+            ).first()
+            
+            if not existing_opposite:
+                # Create the opposite meter point in the linked DC
+                opposite_mp = MeterPoint.objects.create(
+                    distribution_center=linked_dc,
+                    name=name,
+                    code='',
+                    source_type=opposite_type,
+                    voltage_level=(data.get('voltage_level') or '').strip()[:20],
+                    multiplying_factor=decimal.Decimal(str(data.get('multiplying_factor') or 1)),
+                    is_active=True,
+                    connection_source=(data.get('connection_source') or '').strip()[:200],
+                    linked_distribution_center=report.distribution_center,
+                    linked_distribution_center_name=report.distribution_center.name,
+                )
+                
+                # Mark the opposite meter point as inactive for previous months in the linked DC
+                for month_num in range(1, report.month):
+                    linked_monthly_data, _ = MonthlyLossData.objects.get_or_create(
+                        report=linked_report,
+                        month=month_num,
+                        defaults={'month_name': month_names.get(month_num, '')}
+                    )
+                    MonthlyMeterPointStatus.objects.update_or_create(
+                        monthly_data=linked_monthly_data,
+                        meter_point=opposite_mp,
+                        defaults={'is_active': False}
+                    )
         
         # Automatically mark this meter point as inactive for previous months
         # to prevent it from appearing in historical reports
@@ -2448,6 +2912,13 @@ def api_manage_meter_point(request):
         mp = get_object_or_404(MeterPoint, pk=data.get('meter_point_id'))
         if mp.distribution_center_id != report.distribution_center_id:
             return JsonResponse({'error': 'Invalid meter point'}, status=400)
+        
+        # Check delete permissions - DC users can delete ENERGY_IMPORT and ENERGY_EXPORT for their own DC
+        if not _can_manage_feeders(request.user, report.distribution_center, mp.source_type):
+            if mp.source_type in ['ENERGY_IMPORT', 'ENERGY_EXPORT']:
+                return JsonResponse({'error': 'Permission denied. DC users can only delete ENERGY_IMPORT and ENERGY_EXPORT types. Other types require provincial approval.'}, status=403)
+            else:
+                return JsonResponse({'error': 'Permission denied. Only provincial users can delete this feeder type.'}, status=403)
 
         monthly_id = data.get('monthly_id')
         if not monthly_id:
@@ -2579,6 +3050,55 @@ def api_recalculate(request, report_pk):
     })
 
 
+@login_required
+def api_dc_feeders(request):
+    """API endpoint to get feeders for a selected DC"""
+    dc_id = request.GET.get('dc_id')
+    report_pk = request.GET.get('report_pk')
+    if not dc_id:
+        return JsonResponse({'error': 'dc_id parameter required'}, status=400)
+    
+    try:
+        dc = DistributionCenter.objects.get(pk=dc_id, is_active=True)
+    except DistributionCenter.DoesNotExist:
+        return JsonResponse({'error': 'Distribution Center not found'}, status=404)
+    
+    # If report_pk is provided, validate that the DC has a report for the same month
+    if report_pk:
+        try:
+            report = LossReport.objects.get(pk=report_pk)
+            linked_report = LossReport.objects.filter(
+                distribution_center=dc,
+                fiscal_year=report.fiscal_year,
+                month=report.month
+            ).first()
+            
+            if not linked_report:
+                month_name = {
+                    1: 'Shrawan', 2: 'Bhadra', 3: 'Ashwin', 4: 'Kartik',
+                    5: 'Mangsir', 6: 'Poush', 7: 'Magh', 8: 'Falgun',
+                    9: 'Chaitra', 10: 'Baisakh', 11: 'Jestha', 12: 'Ashadh'
+                }.get(report.month, '')
+                return JsonResponse({
+                    'success': False,
+                    'error': f'{dc.name} does not have a report for {month_name} month in fiscal year {report.fiscal_year.year_bs}. Please ensure the linked DC has created a report for the same month.'
+                }, status=400)
+        except LossReport.DoesNotExist:
+            return JsonResponse({'error': 'Report not found'}, status=404)
+    
+    # Get all active meter points (feeders) for this DC
+    feeders = MeterPoint.objects.filter(
+        distribution_center=dc,
+        is_active=True
+    ).order_by('source_type', 'name').values('pk', 'name', 'source_type', 'connection_source')
+    
+    return JsonResponse({
+        'success': True,
+        'feeders': list(feeders),
+        'dc_name': dc.name
+    })
+
+
 # ─────────────────────────── HELPER FUNCTIONS ───────────────────────────
 
 def _can_create_loss_report(user):
@@ -2620,14 +3140,20 @@ def _can_edit_report(user, report):
     return False
 
 
-def _can_manage_feeders(user, distribution_center):
+def _can_manage_feeders(user, distribution_center, source_type=None):
     """Check if user can manage feeders for a distribution center.
-    Only provincial users can manage feeders for DCs under their office."""
+    Only provincial users can manage feeders for DCs under their office.
+    DC users can manage ENERGY_IMPORT and ENERGY_EXPORT types for their own DC."""
     if getattr(user, 'is_system_admin', False):
         return True
     if user.is_provincial:
         po = getattr(user, 'provincial_office', None)
         if po and po.pk == distribution_center.provincial_office_id:
+            return True
+    # DC users can add ENERGY_IMPORT and ENERGY_EXPORT without province approval
+    if user.is_dc_level and source_type in ['ENERGY_IMPORT', 'ENERGY_EXPORT']:
+        dc = getattr(user, 'distribution_center', None)
+        if dc and dc.pk == distribution_center.pk:
             return True
     return False
 
@@ -5316,6 +5842,7 @@ class FeederRequestView(LoginRequiredMixin, View):
 
         request_type = request.POST.get('request_type')
         feeder_name = request.POST.get('feeder_name', '').strip()
+        connection_source = request.POST.get('connection_source', '').strip()
         source_type = request.POST.get('source_type')
         voltage_level = request.POST.get('voltage_level', '').strip()
         multiplying_factor = request.POST.get('multiplying_factor', 1)
@@ -5336,6 +5863,7 @@ class FeederRequestView(LoginRequiredMixin, View):
             requested_by=user,
             request_type=request_type,
             feeder_name=feeder_name,
+            connection_source=connection_source,
             source_type=source_type or '',
             voltage_level=voltage_level,
             multiplying_factor=multiplying_factor or 1,
@@ -5519,3 +6047,872 @@ def feeder_request_reject(request, pk):
     messages.success(request, f'Feeder request for "{feeder_request.feeder_name}" has been rejected.')
     return redirect('feeder_requests')
 
+
+# ─────────────────────────── DCS DETAIL VIEWS ───────────────────────────
+
+def _summarize_dcs_edit_changes(edit_request):
+    """Human-readable summary lines for an edit request."""
+    changes = edit_request.proposed_changes or {}
+    lines = []
+    if changes.get('introduction'):
+        lines.append('Introduction updated')
+    if changes.get('established_date'):
+        lines.append(f"Established date: {changes['established_date']}")
+    if changes.get('coverage_area'):
+        lines.append(f"Coverage: {changes['coverage_area']}")
+    if changes.get('total_capacity'):
+        lines.append(f"Capacity: {changes['total_capacity']} kVA")
+    if edit_request.pending_image:
+        lines.append('New DCS image uploaded')
+    officials = changes.get('officials') or []
+    if officials:
+        lines.append(f"{len(officials)} official(s)")
+    feeders = changes.get('feeders') or []
+    if feeders:
+        lines.append(f"{len(feeders)} feeder(s)")
+    consumers = changes.get('consumer_types') or []
+    if consumers:
+        lines.append(f"{len(consumers)} consumer type(s)")
+    return lines
+
+
+def _get_latest_monthly_data_for_dc(dc, fiscal_year=None):
+    """Return the chronologically latest MonthlyLossData row for a DC."""
+    qs = MonthlyLossData.objects.filter(
+        report__distribution_center=dc,
+    ).select_related('report', 'report__fiscal_year')
+    if fiscal_year:
+        qs = qs.filter(report__fiscal_year=fiscal_year)
+    return qs.order_by(
+        '-report__fiscal_year__year_ad_start',
+        '-report__month',
+    ).first()
+
+
+def record_dcs_history_snapshot(report):
+    """Persist an approved monthly report into DCHistoryEntry for the History page."""
+    if report.status != 'APPROVED':
+        return
+    monthly = report.monthly_data.filter(month=report.month).first()
+    if not monthly:
+        monthly = report.monthly_data.order_by('month').first()
+    consumer_breakdown = {}
+    total_consumers = 0
+    if monthly:
+        for cc in ConsumerCount.objects.filter(monthly_data=monthly).select_related('consumer_category'):
+            consumer_breakdown[cc.consumer_category.name] = cc.count
+            total_consumers += cc.count
+    loss_pct = (
+        float(report.cumulative_loss_percent) * 100
+        if report.total_received_kwh and float(report.total_received_kwh) > 0
+        else 0
+    )
+    prov_manager = None
+    if report.distribution_center.provincial_office_id:
+        prov_manager = NEAUser.objects.filter(
+            provincial_office=report.distribution_center.provincial_office,
+            role='PROVINCIAL_MANAGER',
+        ).first()
+    DCHistoryEntry.objects.update_or_create(
+        distribution_center=report.distribution_center,
+        fiscal_year=report.fiscal_year,
+        month=report.month,
+        defaults={
+            'dc_manager': report.submitted_by or report.created_by,
+            'provincial_manager': report.approved_by or prov_manager,
+            'total_received_kwh': report.total_received_kwh,
+            'total_utilised_kwh': report.total_utilised_kwh,
+            'total_loss_kwh': report.total_loss_kwh,
+            'loss_percent': round(loss_pct, 4),
+            'total_consumers': total_consumers,
+            'consumer_breakdown': consumer_breakdown or None,
+            'report_created_at': report.created_at,
+            'report_submitted_at': report.submission_date,
+            'report_approved_at': report.approval_date,
+        },
+    )
+
+
+def _backfill_history_entries(queryset_filter=None):
+    """Create missing history rows from approved loss reports."""
+    reports = LossReport.objects.filter(status='APPROVED').select_related(
+        'distribution_center', 'fiscal_year', 'created_by', 'submitted_by', 'approved_by',
+    )
+    if queryset_filter is not None:
+        reports = reports.filter(**queryset_filter)
+    for report in reports.iterator():
+        record_dcs_history_snapshot(report)
+
+
+def _get_consumer_rows_from_monthly(monthly_data):
+    """Build consumer category rows from the latest monthly report data."""
+    if not monthly_data:
+        return []
+    counts = ConsumerCount.objects.filter(
+        monthly_data=monthly_data,
+    ).select_related('consumer_category').order_by('consumer_category__display_order', 'consumer_category__name')
+    energy_map = {
+        eu.consumer_category_id: eu
+        for eu in EnergyUtilisation.objects.filter(monthly_data=monthly_data)
+    }
+    rows = []
+    for cc in counts:
+        eu = energy_map.get(cc.consumer_category_id)
+        rows.append({
+            'category_name': cc.consumer_category.name,
+            'consumer_count': cc.count,
+            'energy_kwh': float(eu.energy_kwh) if eu else None,
+        })
+    return rows
+
+
+class DCSDetailView(LoginRequiredMixin, View):
+    """View DCS details - picture, introduction, officials, feeders, consumer types"""
+    template_name = 'nea_loss/dcs_detail/detail.html'
+
+    def get(self, request, dc_id=None):
+        user = request.user
+        
+        # Determine which DC to show
+        if dc_id:
+            dc = get_object_or_404(DistributionCenter, pk=dc_id)
+        elif user.is_dc_level and user.distribution_center:
+            dc = user.distribution_center
+        else:
+            messages.error(request, 'No distribution center specified.')
+            return redirect('dashboard')
+        
+        # Check permissions
+        if not getattr(user, 'is_system_admin', False) and not user.is_provincial and not user.is_top_management and not (user.is_dc_level and user.distribution_center == dc):
+            messages.error(request, 'Access denied.')
+            return redirect('dashboard')
+        
+        # Get or create DCS detail
+        dcs_detail, created = DCSDetail.objects.get_or_create(
+            distribution_center=dc
+        )
+        
+        # Get related data
+        officials = dcs_detail.officials.filter(is_active=True).order_by('designation', 'name')
+        feeders = dcs_detail.feeders.filter(is_active=True).order_by('name')
+        consumer_types = dcs_detail.consumer_types.all().order_by('category_name')
+        
+        # Get actual feeders from database
+        actual_feeders = MeterPoint.objects.filter(
+            distribution_center=dc,
+            is_active=True
+        ).order_by('name')
+        
+        # Get fiscal year
+        current_fiscal_year = FiscalYear.objects.filter(
+            is_active=True
+        ).first()
+
+        # Latest loss data for active FY (falls back to any FY if none in active year)
+        latest_loss_data = _get_latest_monthly_data_for_dc(dc, current_fiscal_year)
+        if not latest_loss_data and current_fiscal_year:
+            latest_loss_data = _get_latest_monthly_data_for_dc(dc)
+
+        consumer_counts = _get_consumer_rows_from_monthly(latest_loss_data)
+        
+        # Edit requests for this DCS
+        pending_edit_request = DCSDetailEditRequest.objects.filter(
+            dcs_detail=dcs_detail, status='PENDING',
+        ).select_related('requested_by').order_by('-created_at').first()
+
+        display_image = None
+        image_is_pending = False
+        if dcs_detail.image:
+            display_image = dcs_detail.image
+        elif pending_edit_request and pending_edit_request.pending_image:
+            display_image = pending_edit_request.pending_image
+            image_is_pending = True
+        user_pending_request = None
+        if user.is_dc_level and pending_edit_request and pending_edit_request.requested_by_id == user.pk:
+            user_pending_request = pending_edit_request
+        last_edit_request = DCSDetailEditRequest.objects.filter(
+            dcs_detail=dcs_detail,
+        ).exclude(status='PENDING').select_related('approved_by').order_by('-created_at').first()
+        
+        can_edit = (
+            user.is_dc_level
+            and user.distribution_center_id == dc.pk
+            and pending_edit_request is None
+        )
+
+        loss_pct_display = None
+        if latest_loss_data and latest_loss_data.net_energy_received:
+            loss_pct_display = round(float(latest_loss_data.monthly_loss_percent) * 100, 4)
+
+        total_profile_consumers = sum(c.consumer_count for c in consumer_types)
+        total_report_consumers = sum(row.get('consumer_count', 0) for row in consumer_counts)
+        feeder_record_count = feeders.count() + actual_feeders.count()
+
+        return render(request, self.template_name, {
+            'dc': dc,
+            'dcs_detail': dcs_detail,
+            'officials': officials,
+            'feeders': feeders,
+            'consumer_types': consumer_types,
+            'actual_feeders': actual_feeders,
+            'consumer_counts': consumer_counts,
+            'latest_loss_data': latest_loss_data,
+            'loss_pct_display': loss_pct_display,
+            'current_fiscal_year': current_fiscal_year,
+            'pending_edit_request': pending_edit_request,
+            'user_pending_request': user_pending_request,
+            'last_edit_request': last_edit_request,
+            'can_edit': can_edit,
+            'total_profile_consumers': total_profile_consumers,
+            'total_report_consumers': total_report_consumers,
+            'feeder_record_count': feeder_record_count,
+            'has_intro': bool((dcs_detail.introduction or '').strip()),
+            'has_image': bool(dcs_detail.image),
+            'display_image': display_image,
+            'image_is_pending': image_is_pending,
+        })
+
+
+class DCSDetailEditView(LoginRequiredMixin, View):
+    """Edit DCS details - requires province password"""
+    template_name = 'nea_loss/dcs_detail/edit.html'
+
+    def get(self, request, dc_id):
+        user = request.user
+        
+        if not user.is_dc_level:
+            messages.error(request, 'Access denied. DC users only.')
+            return redirect('dashboard')
+        
+        dc = get_object_or_404(DistributionCenter, pk=dc_id)
+        if user.distribution_center_id != dc.pk:
+            messages.error(request, 'Access denied. You can only edit your own DC details.')
+            return redirect('dashboard')
+        
+        dcs_detail, created = DCSDetail.objects.get_or_create(distribution_center=dc)
+        pending_edit = DCSDetailEditRequest.objects.filter(
+            dcs_detail=dcs_detail, status='PENDING',
+        ).first()
+        if pending_edit:
+            messages.warning(
+                request,
+                'You already have a pending edit request awaiting provincial approval.',
+            )
+            return redirect('dcs_detail', dc_id=dc.pk)
+        
+        return render(request, self.template_name, {
+            'dc': dc,
+            'dcs_detail': dcs_detail,
+        })
+
+    def post(self, request, dc_id):
+        from django.db import transaction
+
+        user = request.user
+        
+        if not user.is_dc_level:
+            messages.error(request, 'Access denied. DC users only.')
+            return redirect('dashboard')
+        
+        dc = get_object_or_404(DistributionCenter, pk=dc_id)
+        if user.distribution_center_id != dc.pk:
+            messages.error(request, 'Access denied. You can only edit your own DC details.')
+            return redirect('dashboard')
+        
+        dcs_detail, created = DCSDetail.objects.get_or_create(distribution_center=dc)
+
+        if DCSDetailEditRequest.objects.filter(dcs_detail=dcs_detail, status='PENDING').exists():
+            messages.error(request, 'A pending edit request already exists for this DCS.')
+            return redirect('dcs_detail', dc_id=dc.pk)
+
+        try:
+            proposed_changes = {
+                'introduction': request.POST.get('introduction', ''),
+                'established_date': request.POST.get('established_date') or None,
+                'coverage_area': request.POST.get('coverage_area', ''),
+                'total_capacity': request.POST.get('total_capacity') or None,
+            }
+            image_file = request.FILES.get('image')
+
+            officials_data = []
+            official_names = request.POST.getlist('official_name[]')
+            official_designations = request.POST.getlist('official_designation[]')
+            official_phones = request.POST.getlist('official_phone[]')
+            official_emails = request.POST.getlist('official_email[]')
+            official_joining_dates = request.POST.getlist('official_joining_date[]')
+
+            for i, name in enumerate(official_names):
+                name = (name or '').strip()
+                if name:
+                    officials_data.append({
+                        'name': name,
+                        'designation': official_designations[i] if i < len(official_designations) else '',
+                        'phone': official_phones[i] if i < len(official_phones) else '',
+                        'email': official_emails[i] if i < len(official_emails) else '',
+                        'joining_date': official_joining_dates[i] if i < len(official_joining_dates) and official_joining_dates[i] else None,
+                        'is_active': True,
+                    })
+
+            proposed_changes['officials'] = officials_data
+
+            feeders_data = []
+            feeder_names = request.POST.getlist('feeder_name[]')
+            feeder_codes = request.POST.getlist('feeder_code[]')
+            feeder_voltages = request.POST.getlist('feeder_voltage[]')
+            feeder_lengths = request.POST.getlist('feeder_length[]')
+            feeder_loads = request.POST.getlist('feeder_load[]')
+            feeder_transformers = request.POST.getlist('feeder_transformers[]')
+
+            for i, name in enumerate(feeder_names):
+                name = (name or '').strip()
+                if name:
+                    feeders_data.append({
+                        'name': name,
+                        'feeder_code': feeder_codes[i] if i < len(feeder_codes) else '',
+                        'voltage_level': feeder_voltages[i] if i < len(feeder_voltages) else '',
+                        'length_km': feeder_lengths[i] if i < len(feeder_lengths) and feeder_lengths[i] else None,
+                        'connected_load': feeder_loads[i] if i < len(feeder_loads) and feeder_loads[i] else None,
+                        'transformer_count': feeder_transformers[i] if i < len(feeder_transformers) and feeder_transformers[i] else None,
+                        'is_active': True,
+                    })
+
+            proposed_changes['feeders'] = feeders_data
+
+            consumer_types_data = []
+            consumer_names = request.POST.getlist('consumer_name[]')
+            consumer_counts = request.POST.getlist('consumer_count[]')
+            consumer_loads = request.POST.getlist('consumer_load[]')
+
+            for i, name in enumerate(consumer_names):
+                name = (name or '').strip()
+                if name:
+                    consumer_types_data.append({
+                        'category_name': name,
+                        'consumer_count': int(consumer_counts[i]) if i < len(consumer_counts) and consumer_counts[i] else 0,
+                        'connected_load': consumer_loads[i] if i < len(consumer_loads) and consumer_loads[i] else 0,
+                    })
+
+            proposed_changes['consumer_types'] = consumer_types_data
+
+            with transaction.atomic():
+                edit_request = DCSDetailEditRequest.objects.create(
+                    dcs_detail=dcs_detail,
+                    requested_by=user,
+                    proposed_changes=proposed_changes,
+                    status='PENDING',
+                )
+                if image_file:
+                    edit_request.pending_image = image_file
+                    edit_request.save(update_fields=['pending_image'])
+
+                provincial_users = NEAUser.objects.filter(
+                    provincial_office=dc.provincial_office,
+                    role='PROVINCIAL_MANAGER',
+                    is_active=True,
+                )
+                for prov_user in provincial_users:
+                    Notification.objects.create(
+                        recipient=prov_user,
+                        notification_type='FEEDER_REQUESTED',
+                        title='DCS Detail Edit Request',
+                        message=f'{user.full_name} has requested changes to {dc.name} details.',
+                    )
+
+            messages.success(request, 'Your edit request has been submitted for provincial approval.')
+            return redirect('dcs_detail', dc_id=dc.pk)
+
+        except Exception as exc:
+            messages.error(request, f'Could not submit edit request: {exc}')
+            return render(request, self.template_name, {
+                'dc': dc,
+                'dcs_detail': dcs_detail,
+            })
+
+
+class DCSDetailApprovalView(LoginRequiredMixin, View):
+    """Provincial users can approve/reject DCS detail edit requests"""
+    template_name = 'nea_loss/dcs_detail/approval.html'
+
+    def get(self, request):
+        user = request.user
+        
+        if not user.is_provincial and not getattr(user, 'is_system_admin', False):
+            messages.error(request, 'Access denied. Provincial users only.')
+            return redirect('dashboard')
+        
+        # Get pending requests
+        if getattr(user, 'is_system_admin', False):
+            pending_requests = DCSDetailEditRequest.objects.filter(
+                status='PENDING'
+            ).select_related('dcs_detail__distribution_center', 'requested_by').order_by('-created_at')
+        else:
+            pending_requests = DCSDetailEditRequest.objects.filter(
+                status='PENDING',
+                dcs_detail__distribution_center__provincial_office=user.provincial_office
+            ).select_related('dcs_detail__distribution_center', 'requested_by').order_by('-created_at')
+        
+        # Get recent approved/rejected requests
+        if getattr(user, 'is_system_admin', False):
+            recent_requests = DCSDetailEditRequest.objects.filter(
+                status__in=['APPROVED', 'REJECTED']
+            ).select_related('dcs_detail__distribution_center', 'requested_by', 'approved_by').order_by('-created_at')[:20]
+        else:
+            recent_requests = DCSDetailEditRequest.objects.filter(
+                status__in=['APPROVED', 'REJECTED'],
+                dcs_detail__distribution_center__provincial_office=user.provincial_office
+            ).select_related('dcs_detail__distribution_center', 'requested_by', 'approved_by').order_by('-created_at')[:20]
+        
+        for req in pending_requests:
+            req.change_summary = _summarize_dcs_edit_changes(req)
+
+        return render(request, self.template_name, {
+            'pending_requests': pending_requests,
+            'recent_requests': recent_requests,
+        })
+
+
+@login_required
+@require_POST
+def dcs_detail_approve(request, pk):
+    """Approve a DCS detail edit request"""
+    user = request.user
+    
+    if not user.is_provincial and not getattr(user, 'is_system_admin', False):
+        messages.error(request, 'Access denied. Provincial users only.')
+        return redirect('dcs_detail_approval')
+    
+    edit_request = get_object_or_404(DCSDetailEditRequest, pk=pk)
+    
+    # Check jurisdiction
+    if not getattr(user, 'is_system_admin', False) and edit_request.dcs_detail.distribution_center.provincial_office != user.provincial_office:
+        messages.error(request, 'Access denied. This request is not under your jurisdiction.')
+        return redirect('dcs_detail_approval')
+    
+    # Verify password
+    password = request.POST.get('approval_password')
+    office = edit_request.dcs_detail.distribution_center.provincial_office
+    expected = office.edit_approval_password or ''
+    if not expected:
+        messages.error(request, 'Provincial approval password is not set. Set it under Set Approval Password first.')
+        return redirect('dcs_detail_approval')
+    if password != expected:
+        messages.error(request, 'Invalid approval password.')
+        return redirect('dcs_detail_approval')
+    
+    edit_request.approve(user)
+    
+    # Notify the requester
+    Notification.objects.create(
+        recipient=edit_request.requested_by,
+        notification_type='FEEDER_APPROVED',
+        title='DCS Detail Edit Approved',
+        message=f'Your edit request for {edit_request.dcs_detail.distribution_center.name} has been approved.',
+    )
+    
+    messages.success(request, 'DCS detail edit has been approved.')
+    return redirect('dcs_detail_approval')
+
+
+@login_required
+@require_POST
+def dcs_detail_reject(request, pk):
+    """Reject a DCS detail edit request"""
+    user = request.user
+    
+    if not user.is_provincial and not getattr(user, 'is_system_admin', False):
+        messages.error(request, 'Access denied. Provincial users only.')
+        return redirect('dcs_detail_approval')
+    
+    edit_request = get_object_or_404(DCSDetailEditRequest, pk=pk)
+    
+    # Check jurisdiction
+    if not getattr(user, 'is_system_admin', False) and edit_request.dcs_detail.distribution_center.provincial_office != user.provincial_office:
+        messages.error(request, 'Access denied. This request is not under your jurisdiction.')
+        return redirect('dcs_detail_approval')
+    
+    reason = request.POST.get('rejection_reason', '')
+    edit_request.reject(user, reason)
+    
+    # Notify the requester
+    Notification.objects.create(
+        recipient=edit_request.requested_by,
+        notification_type='FEEDER_REJECTED',
+        title='DCS Detail Edit Rejected',
+        message=f'Your edit request for {edit_request.dcs_detail.distribution_center.name} has been rejected. Reason: {reason}',
+    )
+    
+    messages.success(request, 'DCS detail edit has been rejected.')
+    return redirect('dcs_detail_approval')
+
+
+class ProvincePasswordView(LoginRequiredMixin, View):
+    """Provincial users can set their approval password"""
+    template_name = 'nea_loss/dcs_detail/set_password.html'
+
+    def get(self, request):
+        user = request.user
+        
+        if not user.is_provincial and not getattr(user, 'is_system_admin', False):
+            messages.error(request, 'Access denied. Provincial users only.')
+            return redirect('dashboard')
+        
+        if getattr(user, 'is_system_admin', False):
+            provincial_offices = ProvincialOffice.objects.all()
+        else:
+            provincial_offices = [user.provincial_office] if user.provincial_office else []
+        
+        return render(request, self.template_name, {
+            'provincial_offices': provincial_offices,
+        })
+
+    def post(self, request):
+        user = request.user
+        
+        if not user.is_provincial and not getattr(user, 'is_system_admin', False):
+            messages.error(request, 'Access denied. Provincial users only.')
+            return redirect('dashboard')
+        
+        office_id = request.POST.get('provincial_office')
+        new_password = request.POST.get('new_password')
+        confirm_password = request.POST.get('confirm_password')
+        
+        if not new_password or new_password != confirm_password:
+            messages.error(request, 'Passwords do not match.')
+            return redirect('province_password')
+        
+        if getattr(user, 'is_system_admin', False):
+            office = get_object_or_404(ProvincialOffice, pk=office_id)
+        else:
+            office = user.provincial_office
+        
+        office.edit_approval_password = new_password
+        office.save()
+        
+        messages.success(request, 'Approval password has been set successfully.')
+        return redirect('province_password')
+
+
+# ─────────────────────────── HISTORY VIEWS ───────────────────────────
+
+class DCHistoryView(LoginRequiredMixin, View):
+    """View DC history with date filters and charts"""
+    template_name = 'nea_loss/dcs_history/history.html'
+
+    def get(self, request):
+        user = request.user
+        active_fy = FiscalYear.objects.filter(is_active=True).first()
+
+        fy_id = request.GET.get('fy')
+        month = request.GET.get('month')
+        dc_id = request.GET.get('dc')
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        view_mode = request.GET.get('view', 'grouped')
+
+        scope_filter = {}
+        if user.is_dc_level and user.distribution_center_id:
+            scope_filter['distribution_center_id'] = user.distribution_center_id
+            dc_list = DistributionCenter.objects.filter(pk=user.distribution_center_id)
+        elif user.is_provincial and user.provincial_office_id:
+            scope_filter['distribution_center__provincial_office_id'] = user.provincial_office_id
+            dc_list = DistributionCenter.objects.filter(
+                provincial_office=user.provincial_office, is_active=True,
+            ).order_by('name')
+        elif getattr(user, 'is_system_admin', False) or user.is_top_management:
+            dc_list = DistributionCenter.objects.filter(is_active=True).order_by('name')
+        else:
+            dc_list = DistributionCenter.objects.none()
+
+        if dc_id:
+            try:
+                dc_pk = int(dc_id)
+                if (
+                    getattr(user, 'is_system_admin', False)
+                    or getattr(user, 'is_top_management', False)
+                    or dc_list.filter(pk=dc_pk).exists()
+                ):
+                    scope_filter = {'distribution_center_id': dc_pk}
+            except (TypeError, ValueError):
+                pass
+
+        _backfill_history_entries(scope_filter if scope_filter else None)
+
+        history_entries = DCHistoryEntry.objects.select_related(
+            'distribution_center', 'distribution_center__provincial_office', 'fiscal_year',
+            'dc_manager', 'provincial_manager',
+        )
+        if scope_filter:
+            history_entries = history_entries.filter(**scope_filter)
+        else:
+            history_entries = history_entries.none()
+        
+        # For DC users, also fetch province-level data for comparison charts
+        comparison_entries = history_entries
+        if user.is_dc_level and user.distribution_center_id:
+            user_dc = DistributionCenter.objects.filter(pk=user.distribution_center_id).first()
+            if user_dc and user_dc.provincial_office:
+                comparison_entries = DCHistoryEntry.objects.select_related(
+                    'distribution_center', 'distribution_center__provincial_office', 'fiscal_year',
+                ).filter(
+                    distribution_center__provincial_office=user_dc.provincial_office
+                )
+                # Apply same filters to comparison entries
+                if fy_id:
+                    comparison_entries = comparison_entries.filter(fiscal_year_id=fy_id)
+                elif not start_date and not end_date and active_fy:
+                    comparison_entries = comparison_entries.filter(fiscal_year=active_fy)
+                if month:
+                    try:
+                        comparison_entries = comparison_entries.filter(month=int(month))
+                    except (TypeError, ValueError):
+                        pass
+                if start_date:
+                    comparison_entries = comparison_entries.filter(report_created_at__date__gte=start_date)
+                if end_date:
+                    comparison_entries = comparison_entries.filter(report_created_at__date__lte=end_date)
+
+        if fy_id:
+            history_entries = history_entries.filter(fiscal_year_id=fy_id)
+        elif not start_date and not end_date and active_fy:
+            history_entries = history_entries.filter(fiscal_year=active_fy)
+
+        if month:
+            try:
+                history_entries = history_entries.filter(month=int(month))
+            except (TypeError, ValueError):
+                pass
+
+        if start_date:
+            history_entries = history_entries.filter(report_created_at__date__gte=start_date)
+        if end_date:
+            history_entries = history_entries.filter(report_created_at__date__lte=end_date)
+
+        history_entries = list(history_entries.order_by(
+            '-fiscal_year__year_ad_start', '-month', 'distribution_center__name',
+        ))
+
+        # For DC comparison, use province-level data for DC users
+        comparison_entries_list = list(comparison_entries.order_by(
+            '-fiscal_year__year_ad_start', '-month', 'distribution_center__name',
+        )) if user.is_dc_level else history_entries
+
+        chart_data = self._prepare_chart_data(history_entries, comparison_entries_list)
+
+        total_received = sum(float(e.total_received_kwh) for e in history_entries)
+        total_loss = sum(float(e.total_loss_kwh) for e in history_entries)
+        avg_loss_pct = round(total_loss / total_received * 100, 2) if total_received else 0
+
+        history_by_fy = {}
+        if view_mode == 'grouped':
+            for entry in history_entries:
+                fy_key = entry.fiscal_year.year_bs
+                history_by_fy.setdefault(fy_key, []).append(entry)
+
+        fiscal_years = FiscalYear.objects.order_by('-year_ad_start')
+        months_list = [
+            (1, 'Shrawan'), (2, 'Bhadra'), (3, 'Ashwin'), (4, 'Kartik'),
+            (5, 'Mangsir'), (6, 'Poush'), (7, 'Magh'), (8, 'Falgun'),
+            (9, 'Chaitra'), (10, 'Baisakh'), (11, 'Jestha'), (12, 'Ashadh'),
+        ]
+
+        show_dc_column = dc_list.count() > 1
+
+        return render(request, self.template_name, {
+            'history_entries': history_entries,
+            'history_by_fy': history_by_fy,
+            'chart_data': chart_data,
+            'chart_data_json': json.dumps(chart_data),
+            'fiscal_years': fiscal_years,
+            'months_list': months_list,
+            'dc_list': dc_list,
+            'show_dc_column': show_dc_column,
+            'summary': {
+                'count': len(history_entries),
+                'total_received': total_received,
+                'total_loss': total_loss,
+                'avg_loss_pct': avg_loss_pct,
+            },
+            'filters': {
+                'start_date': start_date or '',
+                'end_date': end_date or '',
+                'fy_id': fy_id or '',
+                'month': month or '',
+                'dc_id': dc_id or '',
+                'view': view_mode,
+            },
+            'active_fy': active_fy,
+        })
+    
+    def _prepare_chart_data(self, history_entries, comparison_entries=None):
+        """Prepare data for charts"""
+        # Use comparison_entries for DC comparison if provided (for DC users)
+        dc_comparison_entries = comparison_entries if comparison_entries else history_entries
+        
+        # Group by month for trend analysis
+        monthly_data = {}
+        for entry in history_entries:
+            month_key = f"{entry.fiscal_year.year_bs}-{entry.month}"
+            if month_key not in monthly_data:
+                monthly_data[month_key] = {
+                    'month': entry.get_month_display(),
+                    'fiscal_year': entry.fiscal_year.year_bs,
+                    'total_received': 0,
+                    'total_loss': 0,
+                    'total_utilised': 0,
+                    'loss_percent': 0,
+                    'total_consumers': 0,
+                }
+            monthly_data[month_key]['total_received'] += float(entry.total_received_kwh)
+            monthly_data[month_key]['total_loss'] += float(entry.total_loss_kwh)
+            monthly_data[month_key]['total_utilised'] += float(entry.total_received_kwh) - float(entry.total_loss_kwh)
+            monthly_data[month_key]['total_consumers'] += entry.total_consumers
+        
+        # Calculate percentages
+        for key, data in monthly_data.items():
+            if data['total_received'] > 0:
+                data['loss_percent'] = round((data['total_loss'] / data['total_received']) * 100, 2)
+        
+        # Group by DC for comparison (using comparison_entries for province-level comparison)
+        dc_data = {}
+        for entry in dc_comparison_entries:
+            dc_name = entry.distribution_center.name
+            if dc_name not in dc_data:
+                dc_data[dc_name] = {
+                    'name': dc_name,
+                    'total_received': 0,
+                    'total_loss': 0,
+                    'total_utilised': 0,
+                    'loss_percent': 0,
+                }
+            dc_data[dc_name]['total_received'] += float(entry.total_received_kwh)
+            dc_data[dc_name]['total_loss'] += float(entry.total_loss_kwh)
+            dc_data[dc_name]['total_utilised'] += float(entry.total_received_kwh) - float(entry.total_loss_kwh)
+        
+        for key, data in dc_data.items():
+            if data['total_received'] > 0:
+                data['loss_percent'] = round((data['total_loss'] / data['total_received']) * 100, 2)
+        
+        # Group by fiscal year for year-over-year analysis
+        yearly_data = {}
+        for entry in history_entries:
+            fy_key = entry.fiscal_year.year_bs
+            if fy_key not in yearly_data:
+                yearly_data[fy_key] = {
+                    'fiscal_year': fy_key,
+                    'total_received': 0,
+                    'total_loss': 0,
+                    'loss_percent': 0,
+                }
+            yearly_data[fy_key]['total_received'] += float(entry.total_received_kwh)
+            yearly_data[fy_key]['total_loss'] += float(entry.total_loss_kwh)
+        
+        for key, data in yearly_data.items():
+            if data['total_received'] > 0:
+                data['loss_percent'] = round((data['total_loss'] / data['total_received']) * 100, 2)
+        
+        # Energy distribution for pie chart
+        total_received = sum(float(e.total_received_kwh) for e in history_entries)
+        total_loss = sum(float(e.total_loss_kwh) for e in history_entries)
+        total_utilised = total_received - total_loss
+        
+        energy_distribution = {
+            'received': total_received,
+            'utilised': total_utilised,
+            'loss': total_loss,
+        }
+        
+        return {
+            'monthly_trend': list(monthly_data.values()),
+            'dc_comparison': list(dc_data.values()),
+            'yearly_trend': list(yearly_data.values()),
+            'energy_distribution': energy_distribution,
+        }
+
+
+@login_required
+def api_history_data(request):
+    """API endpoint for history chart data"""
+    user = request.user
+    
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
+    dc_filter = request.GET.get('dc')
+    
+    history_entries = DCHistoryEntry.objects.select_related(
+        'distribution_center', 'fiscal_year'
+    )
+    
+    if dc_filter:
+        history_entries = history_entries.filter(distribution_center_id=dc_filter)
+    elif user.is_dc_level and user.distribution_center:
+        history_entries = history_entries.filter(distribution_center=user.distribution_center)
+    elif user.is_provincial and user.provincial_office:
+        history_entries = history_entries.filter(
+            distribution_center__provincial_office=user.provincial_office
+        )
+    
+    if start_date:
+        history_entries = history_entries.filter(report_created_at__gte=start_date)
+    if end_date:
+        history_entries = history_entries.filter(report_created_at__lte=end_date)
+    
+    history_entries = history_entries.order_by('report_created_at')
+    
+    # Prepare data for charts
+    labels = []
+    loss_data = []
+    received_data = []
+    
+    for entry in history_entries:
+        labels.append(f"{entry.get_month_display()} {entry.fiscal_year.year_bs}")
+        loss_data.append(float(entry.loss_percent))
+        received_data.append(float(entry.total_received_kwh))
+    
+    return JsonResponse({
+        'labels': labels,
+        'loss_data': loss_data,
+        'received_data': received_data,
+    })
+
+
+# ─────────────────────────── DCS LIST VIEW FOR PROVINCE/DMD/MD ───────────────────────────
+
+class DCsListView(LoginRequiredMixin, View):
+    """List of DCs for Province, DMD, and MD users to view DCS details"""
+    template_name = 'nea_loss/dcs/dcs_list.html'
+
+    def get(self, request):
+        user = request.user
+        
+        # Filter DCs based on user role
+        if user.is_provincial and user.provincial_office:
+            # Province users see DCs under their provincial office
+            dcs = DistributionCenter.objects.filter(
+                provincial_office=user.provincial_office,
+                is_active=True
+            ).select_related('provincial_office', 'provincial_office__province').order_by('name')
+        elif user.is_top_management:
+            # MD/DMD/DIRECTOR see all DCs
+            dcs = DistributionCenter.objects.filter(
+                is_active=True
+            ).select_related('provincial_office', 'provincial_office__province').order_by('provincial_office__province', 'name')
+        else:
+            messages.error(request, 'Access denied.')
+            return redirect('dashboard')
+        
+        # Get DCS details for each DC
+        dc_details = []
+        for dc in dcs:
+            dcs_detail = DCSDetail.objects.filter(distribution_center=dc).first()
+            dc_details.append({
+                'dc': dc,
+                'dcs_detail': dcs_detail,
+                'has_detail': dcs_detail is not None,
+                'province': dc.provincial_office.province.name if dc.provincial_office else 'N/A',
+                'provincial_office': dc.provincial_office.name if dc.provincial_office else 'N/A',
+            })
+        
+        return render(request, self.template_name, {
+            'dc_details': dc_details,
+            'user_role': user.role,
+        })
