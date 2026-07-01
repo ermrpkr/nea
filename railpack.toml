@@ -10,7 +10,7 @@ commands = ["pip install -r requirements.txt"]
 
 [[buildSteps]]
 name = "migrate"
-commands = ["python manage.py migrate --noinput"]
+commands = ["python manage.py migrate --noinput --fake-initial"]
 
 [[buildSteps]]
 name = "collectstatic"
