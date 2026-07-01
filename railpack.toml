@@ -9,5 +9,9 @@ name = "install"
 commands = ["pip install -r requirements.txt"]
 
 [[buildSteps]]
+name = "migrate"
+commands = ["python manage.py migrate --noinput"]
+
+[[buildSteps]]
 name = "collectstatic"
-commands = ["python manage.py collectstatic --noinput"]
+commands = ["python manage.py collectstatic --noinput --clear"]
