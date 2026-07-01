@@ -1,0 +1,482 @@
+{% extends 'nea_loss/base.html' %}
+
+{% block title %}Edit {{ dc.name }} Details{% endblock %}
+
+{% block content %}
+<style>
+.edit-sidebar {
+    position: sticky;
+    top: 80px;
+    height: calc(100vh - 100px);
+    overflow-y: auto;
+    background: white;
+    border-radius: 8px;
+}
+.edit-sidebar .nav-item {
+    padding: 12px 16px;
+    margin-bottom: 4px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #333;
+}
+.edit-sidebar .nav-item:hover {
+    background: #F7FAFC;
+}
+.edit-sidebar .nav-item.active {
+    background: var(--nea-blue);
+    color: white;
+}
+.edit-sidebar .nav-item i {
+    width: 20px;
+    text-align: center;
+}
+.tab-content {
+    display: none;
+}
+.tab-content.active {
+    display: block;
+    animation: fadeIn 0.3s ease-in;
+}
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+</style>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h2 class="fw-600">Edit {{ dc.name }} Details</h2>
+                    <p class="text-muted mb-0">Changes are submitted to your provincial office for approval before they go live</p>
+                </div>
+                <a href="{% url 'dcs_detail' dc.id %}" class="btn btn-outline">
+                    <i class="fas fa-arrow-left"></i> Back to Details
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <form id="dcs-edit-form" method="post" action="{% url 'dcs_detail_edit' dc.id %}" enctype="multipart/form-data" novalidate>
+        {% csrf_token %}
+        
+        <div class="row">
+            <!-- Sidebar Navigation -->
+            <div class="col-md-3">
+                <div class="card edit-sidebar">
+                    <div class="card-body p-2">
+                        <h6 class="text-muted mb-3 px-3">Sections</h6>
+                        
+                        <div class="nav-item active" data-tab="basic" onclick="showTab('basic', this)">
+                            <i class="fas fa-info-circle"></i>
+                            <span>Basic Information</span>
+                        </div>
+                        
+                        <div class="nav-item" data-tab="image" onclick="showTab('image', this)">
+                            <i class="fas fa-image"></i>
+                            <span>DCS Image</span>
+                        </div>
+                        
+                        <div class="nav-item" data-tab="officials" onclick="showTab('officials', this)">
+                            <i class="fas fa-user-tie"></i>
+                            <span>Officials</span>
+                        </div>
+                        
+                        <div class="nav-item" data-tab="feeders" onclick="showTab('feeders', this)">
+                            <i class="fas fa-plug"></i>
+                            <span>Feeders</span>
+                        </div>
+                        
+                        <div class="nav-item" data-tab="consumers" onclick="showTab('consumers', this)">
+                            <i class="fas fa-users"></i>
+                            <span>Consumer Types</span>
+                        </div>
+                        
+                        <hr class="my-3">
+                        
+                        <div class="nav-item" data-tab="submit" onclick="showTab('submit', this)">
+                            <i class="fas fa-paper-plane"></i>
+                            <span>Submit</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Main Content -->
+            <div class="col-md-9">
+                
+                <!-- Basic Information Tab -->
+                <div id="tab-basic" class="tab-content active">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5><i class="fas fa-info-circle"></i> Basic Information</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-4">
+                                <label for="introduction" class="form-label">Introduction</label>
+                                <textarea class="form-control" id="introduction" name="introduction" rows="8" placeholder="Enter introduction about the DCS...">{{ dcs_detail.introduction|default:"" }}</textarea>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-4 mb-3">
+                                    <label for="established_date" class="form-label">Established Date</label>
+                                    <input type="date" class="form-control" id="established_date" name="established_date" value="{% if dcs_detail.established_date %}{{ dcs_detail.established_date|date:'Y-m-d' }}{% endif %}">
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label for="total_capacity" class="form-label">Total Capacity (kVA)</label>
+                                    <input type="number" step="0.01" class="form-control" id="total_capacity" name="total_capacity" placeholder="e.g., 5000" value="{{ dcs_detail.total_capacity|default:"" }}">
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label for="coverage_area" class="form-label">Coverage Area</label>
+                                    <input type="text" class="form-control" id="coverage_area" name="coverage_area" placeholder="e.g., Kathmandu Valley" value="{{ dcs_detail.coverage_area|default:"" }}">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Image Tab -->
+                <div id="tab-image" class="tab-content">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5><i class="fas fa-image"></i> DCS Image</h5>
+                        </div>
+                        <div class="card-body">
+                            <label class="form-label">Upload Image</label>
+                            <div class="border rounded p-4 text-center mb-3" style="min-height: 200px; background: #F7FAFC;">
+                                {% if dcs_detail.image %}
+                                <img src="{{ dcs_detail.image.url }}" alt="Current image" class="img-fluid mb-2" style="max-height: 180px;">
+                                <br>
+                                <small class="text-muted">Current image: {{ dcs_detail.image.name }}</small>
+                                {% else %}
+                                <i class="fas fa-image text-muted" style="font-size: 48px; opacity: 0.3;"></i>
+                                <p class="text-muted mt-3 mb-0">No image uploaded</p>
+                                {% endif %}
+                            </div>
+                            <input type="file" class="form-control" id="image" name="image" accept="image/*">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Officials Tab -->
+                <div id="tab-officials" class="tab-content">
+                    <div class="card mb-4">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5><i class="fas fa-user-tie"></i> Officials</h5>
+                            <button type="button" class="btn btn-sm btn-success" onclick="addOfficial()">
+                                <i class="fas fa-plus"></i> Add Official
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <div id="officials-container">
+                                {% for official in dcs_detail.officials.all %}
+                                <div class="official-row card mb-3 p-3" style="background: #F7FAFC;">
+                                    <div class="row g-3">
+                                        <div class="col-md-3">
+                                            <label class="form-label small text-muted">Name *</label>
+                                            <input type="text" class="form-control" name="official_name[]" placeholder="Full name" value="{{ official.name }}">
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label small text-muted">Designation</label>
+                                            <input type="text" class="form-control" name="official_designation[]" placeholder="e.g., Chief Engineer" value="{{ official.designation }}">
+                                        </div>
+                                        <div class="col-md-2">
+                                            <label class="form-label small text-muted">Phone</label>
+                                            <input type="text" class="form-control" name="official_phone[]" placeholder="Phone number" value="{{ official.phone }}">
+                                        </div>
+                                        <div class="col-md-2">
+                                            <label class="form-label small text-muted">Email</label>
+                                            <input type="email" class="form-control" name="official_email[]" placeholder="Email address" value="{{ official.email }}">
+                                        </div>
+                                        <div class="col-md-2">
+                                            <label class="form-label small text-muted">Joining Date</label>
+                                            <input type="date" class="form-control" name="official_joining_date[]" value="{% if official.joining_date %}{{ official.joining_date|date:'Y-m-d' }}{% endif %}">
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <div class="text-center text-muted py-3" id="no-officials-msg" style="display: {% if dcs_detail.officials.all %}none{% else %}block{% endif %};">
+                                <i class="fas fa-users" style="font-size: 32px; opacity: 0.3;"></i>
+                                <p class="mt-2 mb-0">No officials added yet. Click "Add Official" to add one.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Feeders Tab -->
+                <div id="tab-feeders" class="tab-content">
+                    <div class="card mb-4">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5><i class="fas fa-plug"></i> Feeders</h5>
+                            <button type="button" class="btn btn-sm btn-success" onclick="addFeeder()">
+                                <i class="fas fa-plus"></i> Add Feeder
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <div id="feeders-container">
+                                {% for feeder in dcs_detail.feeders.all %}
+                                <div class="feeder-row card mb-3 p-3" style="background: #F7FAFC;">
+                                    <div class="row g-3">
+                                        <div class="col-md-3">
+                                            <label class="form-label small text-muted">Feeder Name *</label>
+                                            <input type="text" class="form-control" name="feeder_name[]" placeholder="Feeder name" value="{{ feeder.name }}">
+                                        </div>
+                                        <div class="col-md-2">
+                                            <label class="form-label small text-muted">Code</label>
+                                            <input type="text" class="form-control" name="feeder_code[]" placeholder="Feeder code" value="{{ feeder.feeder_code }}">
+                                        </div>
+                                        <div class="col-md-2">
+                                            <label class="form-label small text-muted">Voltage</label>
+                                            <input type="text" class="form-control" name="feeder_voltage[]" placeholder="e.g., 11 kV" value="{{ feeder.voltage_level }}">
+                                        </div>
+                                        <div class="col-md-2">
+                                            <label class="form-label small text-muted">Length (km)</label>
+                                            <input type="number" step="0.01" class="form-control" name="feeder_length[]" placeholder="Length" value="{{ feeder.length_km }}">
+                                        </div>
+                                        <div class="col-md-2">
+                                            <label class="form-label small text-muted">Load (kVA)</label>
+                                            <input type="number" step="0.01" class="form-control" name="feeder_load[]" placeholder="Connected load" value="{{ feeder.connected_load }}">
+                                        </div>
+                                        <div class="col-md-1">
+                                            <label class="form-label small text-muted">Transformers</label>
+                                            <input type="number" class="form-control" name="feeder_transformers[]" placeholder="Count" value="{{ feeder.transformer_count }}">
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <div class="text-center text-muted py-3" id="no-feeders-msg" style="display: {% if dcs_detail.feeders.all %}none{% else %}block{% endif %};">
+                                <i class="fas fa-plug" style="font-size: 32px; opacity: 0.3;"></i>
+                                <p class="mt-2 mb-0">No feeders added yet. Click "Add Feeder" to add one.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Consumer Types Tab -->
+                <div id="tab-consumers" class="tab-content">
+                    <div class="card mb-4">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5><i class="fas fa-users"></i> Consumer Types</h5>
+                            <button type="button" class="btn btn-sm btn-success" onclick="addConsumer()">
+                                <i class="fas fa-plus"></i> Add Consumer Type
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <div id="consumers-container">
+                                {% for consumer in dcs_detail.consumer_types.all %}
+                                <div class="consumer-row card mb-3 p-3" style="background: #F7FAFC;">
+                                    <div class="row g-3">
+                                        <div class="col-md-5">
+                                            <label class="form-label small text-muted">Category Name *</label>
+                                            <input type="text" class="form-control" name="consumer_name[]" placeholder="e.g., Domestic" value="{{ consumer.category_name }}">
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label small text-muted">Consumer Count</label>
+                                            <input type="number" class="form-control" name="consumer_count[]" placeholder="Number of consumers" value="{{ consumer.consumer_count }}">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small text-muted">Connected Load (kVA)</label>
+                                            <input type="number" step="0.01" class="form-control" name="consumer_load[]" placeholder="Total connected load" value="{{ consumer.connected_load }}">
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <div class="text-center text-muted py-3" id="no-consumers-msg" style="display: {% if dcs_detail.consumer_types.all %}none{% else %}block{% endif %};">
+                                <i class="fas fa-users" style="font-size: 32px; opacity: 0.3;"></i>
+                                <p class="mt-2 mb-0">No consumer types added yet. Click "Add Consumer Type" to add one.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Submit Tab -->
+                <div id="tab-submit" class="tab-content">
+                    <div class="card mb-4" style="border-left: 4px solid var(--nea-blue); background: #EBF5FB;">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center gap-3 mb-4">
+                                <i class="fas fa-paper-plane text-primary" style="font-size: 32px;"></i>
+                                <div>
+                                    <h5 class="mb-1">Submit for Provincial Approval</h5>
+                                    <p class="text-muted mb-0">Your provincial manager will review and approve the changes. Approved updates will appear on the DCS Detail page.</p>
+                                </div>
+                            </div>
+                            <ul class="text-muted" style="font-size:13px;margin-bottom:20px;padding-left:20px;">
+                                <li>Review all sections before submitting</li>
+                                <li>You cannot edit again while a request is pending</li>
+                                <li>Provincial office uses their approval password to accept changes</li>
+                            </ul>
+                            <div class="mt-4">
+                                <button type="submit" class="btn btn-primary btn-lg" id="btn-submit-approval">
+                                    <i class="fas fa-paper-plane"></i> Submit for Approval
+                                </button>
+                                <a href="{% url 'dcs_detail' dc.id %}" class="btn btn-outline btn-lg">
+                                    <i class="fas fa-times"></i> Cancel
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+            </div>
+        </div>
+
+        <!-- Sticky submit bar (always visible) -->
+        <div class="edit-submit-bar">
+            <span class="text-muted" style="font-size:13px;">
+                <i class="fas fa-info-circle"></i> Save sends all sections to provincial office for approval
+            </span>
+            <div style="display:flex;gap:10px;">
+                <a href="{% url 'dcs_detail' dc.id %}" class="btn btn-outline">Cancel</a>
+                <button type="submit" class="btn btn-primary" id="btn-submit-sticky">
+                    <i class="fas fa-paper-plane"></i> Submit for Approval
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<style>
+.edit-submit-bar {
+    position: sticky;
+    bottom: 0;
+    margin-top: 24px;
+    padding: 14px 20px;
+    background: white;
+    border: 1px solid var(--border-color, #E0E0E0);
+    border-radius: 10px;
+    box-shadow: 0 -4px 16px rgba(0,0,0,0.08);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    z-index: 50;
+}
+</style>
+
+<script>
+function showTab(tabName, navEl) {
+    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+    document.querySelectorAll('.edit-sidebar .nav-item').forEach(item => item.classList.remove('active'));
+    const panel = document.getElementById('tab-' + tabName);
+    if (panel) panel.classList.add('active');
+    if (navEl) navEl.classList.add('active');
+}
+
+document.getElementById('dcs-edit-form').addEventListener('submit', function(e) {
+    const btn = document.getElementById('btn-submit-approval');
+    const sticky = document.getElementById('btn-submit-sticky');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting…'; }
+    if (sticky) { sticky.disabled = true; sticky.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting…'; }
+});
+
+function addOfficial() {
+    const container = document.getElementById('officials-container');
+    const noMsg = document.getElementById('no-officials-msg');
+    if (noMsg) noMsg.style.display = 'none';
+    
+    const row = document.createElement('div');
+    row.className = 'official-row card mb-3 p-3';
+    row.style.background = '#F7FAFC';
+    row.innerHTML = `
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label small text-muted">Name *</label>
+                <input type="text" class="form-control" name="official_name[]" placeholder="Full name">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-muted">Designation</label>
+                <input type="text" class="form-control" name="official_designation[]" placeholder="e.g., Chief Engineer">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted">Phone</label>
+                <input type="text" class="form-control" name="official_phone[]" placeholder="Phone number">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted">Email</label>
+                <input type="email" class="form-control" name="official_email[]" placeholder="Email address">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted">Joining Date</label>
+                <input type="date" class="form-control" name="official_joining_date[]">
+            </div>
+        </div>
+    `;
+    container.appendChild(row);
+}
+
+function addFeeder() {
+    const container = document.getElementById('feeders-container');
+    const noMsg = document.getElementById('no-feeders-msg');
+    if (noMsg) noMsg.style.display = 'none';
+    
+    const row = document.createElement('div');
+    row.className = 'feeder-row card mb-3 p-3';
+    row.style.background = '#F7FAFC';
+    row.innerHTML = `
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label small text-muted">Feeder Name *</label>
+                <input type="text" class="form-control" name="feeder_name[]" placeholder="Feeder name">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted">Code</label>
+                <input type="text" class="form-control" name="feeder_code[]" placeholder="Feeder code">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted">Voltage</label>
+                <input type="text" class="form-control" name="feeder_voltage[]" placeholder="e.g., 11 kV">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted">Length (km)</label>
+                <input type="number" step="0.01" class="form-control" name="feeder_length[]" placeholder="Length">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted">Load (kVA)</label>
+                <input type="number" step="0.01" class="form-control" name="feeder_load[]" placeholder="Connected load">
+            </div>
+            <div class="col-md-1">
+                <label class="form-label small text-muted">Transformers</label>
+                <input type="number" class="form-control" name="feeder_transformers[]" placeholder="Count">
+            </div>
+        </div>
+    `;
+    container.appendChild(row);
+}
+
+function addConsumer() {
+    const container = document.getElementById('consumers-container');
+    const noMsg = document.getElementById('no-consumers-msg');
+    if (noMsg) noMsg.style.display = 'none';
+    
+    const row = document.createElement('div');
+    row.className = 'consumer-row card mb-3 p-3';
+    row.style.background = '#F7FAFC';
+    row.innerHTML = `
+        <div class="row g-3">
+            <div class="col-md-5">
+                <label class="form-label small text-muted">Category Name *</label>
+                <input type="text" class="form-control" name="consumer_name[]" placeholder="e.g., Domestic">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-muted">Consumer Count</label>
+                <input type="number" class="form-control" name="consumer_count[]" placeholder="Number of consumers">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small text-muted">Connected Load (kVA)</label>
+                <input type="number" step="0.01" class="form-control" name="consumer_load[]" placeholder="Total connected load">
+            </div>
+        </div>
+    `;
+    container.appendChild(row);
+}
+</script>
+{% endblock %}

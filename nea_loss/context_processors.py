@@ -12,6 +12,7 @@ def nea_permissions(request):
             'is_provincial': False,
             'is_dc_level': False,
             'pending_dmd_approvals_count': 0,
+            'pending_dcs_detail_edits': 0,
         }
 
     is_sys_admin = getattr(u, 'is_system_admin', False)
@@ -43,12 +44,20 @@ def nea_permissions(request):
 
     # Count approved reports for provincial users
     approved_reports_count = 0
+    pending_dcs_detail_edits = 0
     if is_prov and u.provincial_office_id:
-        from .models import ProvincialReport
+        from .models import ProvincialReport, DCSDetailEditRequest
         approved_reports_count = ProvincialReport.objects.filter(
             provincial_office_id=u.provincial_office_id,
             status='DMD_APPROVED'
         ).count()
+        pending_dcs_detail_edits = DCSDetailEditRequest.objects.filter(
+            status='PENDING',
+            dcs_detail__distribution_center__provincial_office_id=u.provincial_office_id,
+        ).count()
+    elif is_sys_admin:
+        from .models import DCSDetailEditRequest
+        pending_dcs_detail_edits = DCSDetailEditRequest.objects.filter(status='PENDING').count()
 
     return {
         'can_create_loss_report': can_create_dc,
@@ -60,4 +69,5 @@ def nea_permissions(request):
         'is_dc_level': is_dc,
         'pending_dmd_approvals_count': pending_dmd_count,
         'approved_reports_count': approved_reports_count,
+        'pending_dcs_detail_edits': pending_dcs_detail_edits,
     }

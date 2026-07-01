@@ -16,7 +16,7 @@ from .models import (
     FiscalYear, LossReport, MonthlyLossData, MeterPoint, MeterReading,
     ConsumerCategory, EnergyUtilisation, ConsumerCount,
     AuditLog, Notification, ProvincialReport, DCMonthlyTarget, DCYearlyTarget,
-    MonthlyMeterPointStatus, DCReportOverride,
+    MonthlyMeterPointStatus, DCReportOverride, EnergyImportDetail, EnergyExportDetail,
 )
 
 # ── Site branding ──────────────────────────────────────────────────────────────
@@ -475,7 +475,20 @@ class MeterPointAdmin(admin.ModelAdmin):
     actions = ['admin_edit_action']  # Add edit action
 
     fieldsets = (
-        ('Feeder Identity', {'fields': ('distribution_center', 'name', 'code', 'source_type')}),
+        ('Feeder Identity', {'fields': ('distribution_center', 'name', 'code', 'source_type', 'connection_source')}),
+        ('Cross-DC Energy Transfer', {
+            'fields': ('linked_distribution_center', 'linked_distribution_center_name'),
+            'description': (
+                '<div style="background:#FEF9E7;padding:10px 14px;border-radius:8px;'
+                'font-size:12px;margin-bottom:8px;color:#B7770D;">'
+                '<strong>⚡ Cross-DC Validation:</strong><br>'
+                'For <b>ENERGY_IMPORT</b>: Set the source DC (where energy comes from).<br>'
+                'For <b>ENERGY_EXPORT/EXPORT_DC</b>: Set the destination DC (where energy goes to).<br>'
+                'Use the dropdown for exact DC match, or type a name for free-text entry.<br>'
+                'The system will validate that both DCs have matching unit names and readings.'
+                '</div>'
+            ),
+        }),
         ('Technical Details', {'fields': ('voltage_level', 'multiplying_factor', 'is_active')}),
     )
 
@@ -741,3 +754,31 @@ class DCReportOverrideAdmin(admin.ModelAdmin):
                 related_report=None
             )
         self.message_user(request, f'{count} override(s) rejected.')
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  ENERGY IMPORT DETAIL
+# ══════════════════════════════════════════════════════════════════════════════
+@admin.register(EnergyImportDetail)
+class EnergyImportDetailAdmin(admin.ModelAdmin):
+    list_display = ['source_feeder_name', 'source_connection', 'source_type', 'unit_kwh', 'monthly_data', 'linked_export_detail']
+    list_filter = ['source_type']
+    search_fields = ['source_feeder_name', 'source_connection']
+    readonly_fields = ['difference', 'unit_kwh', 'created_at', 'updated_at']
+    fields = ('monthly_data', 'meter_point', 'source_feeder_name', 'source_connection', 'source_type', 
+              'source_voltage', 'source_mf', 'present_reading', 'previous_reading', 'difference', 
+              'unit_kwh', 'linked_export_detail', 'remarks', 'created_at', 'updated_at')
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  ENERGY EXPORT DETAIL
+# ══════════════════════════════════════════════════════════════════════════════
+@admin.register(EnergyExportDetail)
+class EnergyExportDetailAdmin(admin.ModelAdmin):
+    list_display = ['destination_feeder_name', 'destination_connection', 'destination_type', 'unit_kwh', 'monthly_data', 'linked_import_detail']
+    list_filter = ['destination_type']
+    search_fields = ['destination_feeder_name', 'destination_connection']
+    readonly_fields = ['difference', 'unit_kwh', 'created_at', 'updated_at']
+    fields = ('monthly_data', 'meter_point', 'destination_feeder_name', 'destination_connection', 'destination_type',
+              'destination_voltage', 'destination_mf', 'present_reading', 'previous_reading', 'difference',
+              'unit_kwh', 'linked_import_detail', 'remarks', 'created_at', 'updated_at')

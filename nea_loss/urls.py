@@ -62,6 +62,7 @@ urlpatterns = [
     # Analytics
     path('analytics/', views.AnalyticsView.as_view(), name='analytics'),
     path('analytics/comparison/', views.ComparisonView.as_view(), name='comparison'),
+    path('analytics/managerial/', views.ManagerialAnalyticsView.as_view(), name='managerial_analytics'),
 
     # User Management
     path('users/', views.UserListView.as_view(), name='user_list'),
@@ -88,6 +89,7 @@ urlpatterns = [
     path('api/meter-points/disable-month/', views.api_disable_meter_point_for_month, name='api_disable_meter_point_for_month'),
     path('api/consumer-data/save/', views.api_save_consumer_data, name='api_save_consumer'),
     path('api/recalculate/<int:report_pk>/', views.api_recalculate, name='api_recalculate'),
+    path('api/dc-feeders/', views.api_dc_feeders, name='api_dc_feeders'),
 
     # DC Report Override Management
     path('overrides/request/', views.OverrideRequestView.as_view(), name='override_request'),
@@ -100,6 +102,21 @@ urlpatterns = [
     path('feeders/requests/', views.FeederRequestsView.as_view(), name='feeder_requests'),
     path('feeders/requests/<int:pk>/approve/', views.feeder_request_approve, name='feeder_request_approve'),
     path('feeders/requests/<int:pk>/reject/', views.feeder_request_reject, name='feeder_request_reject'),
+
+    # DCS Detail
+    path('dcs-detail/<int:dc_id>/', views.DCSDetailView.as_view(), name='dcs_detail'),
+    path('dcs-detail/<int:dc_id>/edit/', views.DCSDetailEditView.as_view(), name='dcs_detail_edit'),
+    path('dcs-detail/approval/', views.DCSDetailApprovalView.as_view(), name='dcs_detail_approval'),
+    path('dcs-detail/approval/<int:pk>/approve/', views.dcs_detail_approve, name='dcs_detail_approve'),
+    path('dcs-detail/approval/<int:pk>/reject/', views.dcs_detail_reject, name='dcs_detail_reject'),
+    path('province/password/', views.ProvincePasswordView.as_view(), name='province_password'),
+    
+    # DCs List for Province/DMD/MD
+    path('dcs/', views.DCsListView.as_view(), name='dcs_list'),
+
+    # History
+    path('history/', views.DCHistoryView.as_view(), name='dc_history'),
+    path('api/history-data/', views.api_history_data, name='api_history_data'),
 
     # Admin Tools (separate module - can be easily removed)
     path('admin-tools/', include('nea_loss.admin_tools.urls')),

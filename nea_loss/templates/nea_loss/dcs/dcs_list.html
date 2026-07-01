@@ -1,0 +1,63 @@
+{% extends 'nea_loss/base.html' %}
+
+{% block title %}DCs Detail - NEA Loss Analysis System{% endblock %}
+
+{% block page_title %}DCs Detail{% endblock %}
+
+{% block breadcrumb %}DCs Detail{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <h2>Distribution Centers (DCS)</h2>
+  </div>
+  <div class="card-body">
+    {% if user_role == 'PROVINCIAL_MANAGER' %}
+    <p class="text-muted mb-16">View DCS details for distribution centers under your provincial office.</p>
+    {% elif user_role == 'MD' or user_role == 'DMD' or user_role == 'DIRECTOR' %}
+    <p class="text-muted mb-16">View DCS details for all distribution centers across the organization.</p>
+    {% endif %}
+
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>DC Name</th>
+            <th>Code</th>
+            <th>Province</th>
+            <th>Provincial Office</th>
+            <th>DCS Detail Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in dc_details %}
+          <tr>
+            <td><strong>{{ item.dc.name }}</strong></td>
+            <td>{{ item.dc.code }}</td>
+            <td>{{ item.province }}</td>
+            <td>{{ item.provincial_office }}</td>
+            <td>
+              {% if item.has_detail %}
+                <span class="badge badge-approved">Created</span>
+              {% else %}
+                <span class="badge badge-draft">Not Created</span>
+              {% endif %}
+            </td>
+            <td>
+              <a href="{% url 'dcs_detail' item.dc.id %}" class="btn btn-sm btn-outline">
+                <i class="fas fa-eye"></i> View Detail
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="6" class="text-center text-muted">No distribution centers found.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

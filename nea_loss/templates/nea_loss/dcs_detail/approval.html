@@ -1,0 +1,195 @@
+{% extends 'nea_loss/base.html' %}
+
+{% block title %}DCS Detail Edit Approval{% endblock %}
+{% block page_title %}DCS Detail Edit Approval{% endblock %}
+{% block breadcrumb %}DCS Information &rsaquo; Edit Approval{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+        <div>
+            <p class="text-muted mb-0" style="font-size:14px;">Review and approve DCS profile changes submitted by DC staff.</p>
+        </div>
+        <a href="{% url 'province_password' %}" class="btn btn-outline">
+            <i class="fas fa-key"></i> Set Approval Password
+        </a>
+    </div>
+
+    <!-- Pending Requests -->
+    <div class="card mb-4" style="overflow:hidden;">
+        <div class="card-header" style="background:#FEF9E7;border-bottom:1px solid #F9E79F;">
+            <h2 style="margin:0;font-size:16px;color:#7D6608;">
+                <i class="fas fa-clock"></i> Pending Edit Requests
+                <span class="badge" style="background:#F39C12;color:white;margin-left:8px;">{{ pending_requests|length }}</span>
+            </h2>
+        </div>
+        <div class="card-body">
+            {% if pending_requests %}
+            <div class="table-wrap">
+                <table class="table" style="width:100%;font-size:13px;">
+                    <thead>
+                        <tr style="background:#F7FAFC;">
+                            <th>Distribution Center</th>
+                            <th>Requested By</th>
+                            <th>Summary</th>
+                            <th>Submitted</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for request in pending_requests %}
+                        <tr>
+                            <td><strong>{{ request.dcs_detail.distribution_center.name }}</strong></td>
+                            <td>{{ request.requested_by.full_name }}</td>
+                            <td>
+                                <ul style="margin:0;padding-left:16px;font-size:12px;color:var(--text-muted);">
+                                    {% for line in request.change_summary %}
+                                    <li>{{ line }}</li>
+                                    {% empty %}
+                                    <li>Profile updates</li>
+                                    {% endfor %}
+                                </ul>
+                            </td>
+                            <td>{{ request.created_at|date:"Y-m-d H:i" }}</td>
+                            <td style="white-space:nowrap;">
+                                <button type="button" class="btn btn-outline btn-sm" onclick="toggleDetail({{ request.pk }})">
+                                    <i class="fas fa-eye"></i> Details
+                                </button>
+                                <form method="post" action="{% url 'dcs_detail_approve' request.pk %}" class="d-inline">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="approval_password" id="approvePassword{{ request.pk }}">
+                                    <button type="button" class="btn btn-success btn-sm" onclick="promptPassword({{ request.pk }})">
+                                        <i class="fas fa-check"></i> Approve
+                                    </button>
+                                </form>
+                                <form method="post" action="{% url 'dcs_detail_reject' request.pk %}" class="d-inline">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="rejection_reason" id="rejectReason{{ request.pk }}">
+                                    <button type="button" class="btn btn-danger btn-sm" onclick="promptRejection({{ request.pk }})">
+                                        <i class="fas fa-times"></i> Reject
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        <tr id="detail-row-{{ request.pk }}" style="display:none;background:#FAFCFF;">
+                            <td colspan="5" style="padding:16px 20px;">
+                                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;">
+                                    {% if request.pending_image %}
+                                    <div>
+                                        <strong style="font-size:12px;text-transform:uppercase;color:var(--text-muted);">New image</strong>
+                                        <div class="mt-2"><img src="{{ request.pending_image.url }}" alt="Pending" style="max-height:120px;border-radius:8px;"></div>
+                                    </div>
+                                    {% endif %}
+                                    <div>
+                                        <strong style="font-size:12px;text-transform:uppercase;color:var(--text-muted);">Basic info</strong>
+                                        <p class="mb-1 mt-2" style="font-size:13px;"><strong>Introduction:</strong> {{ request.proposed_changes.introduction|truncatewords:40|default:"—" }}</p>
+                                        <p class="mb-1" style="font-size:13px;"><strong>Established:</strong> {{ request.proposed_changes.established_date|default:"—" }}</p>
+                                        <p class="mb-1" style="font-size:13px;"><strong>Coverage:</strong> {{ request.proposed_changes.coverage_area|default:"—" }}</p>
+                                        <p class="mb-0" style="font-size:13px;"><strong>Capacity:</strong> {{ request.proposed_changes.total_capacity|default:"—" }} kVA</p>
+                                    </div>
+                                    {% if request.proposed_changes.officials %}
+                                    <div>
+                                        <strong style="font-size:12px;text-transform:uppercase;color:var(--text-muted);">Officials ({{ request.proposed_changes.officials|length }})</strong>
+                                        <ul class="mt-2 mb-0" style="font-size:12px;padding-left:16px;">
+                                            {% for o in request.proposed_changes.officials %}
+                                            <li>{{ o.name }} — {{ o.designation|default:"—" }}</li>
+                                            {% endfor %}
+                                        </ul>
+                                    </div>
+                                    {% endif %}
+                                    {% if request.proposed_changes.feeders %}
+                                    <div>
+                                        <strong style="font-size:12px;text-transform:uppercase;color:var(--text-muted);">Feeders ({{ request.proposed_changes.feeders|length }})</strong>
+                                        <ul class="mt-2 mb-0" style="font-size:12px;padding-left:16px;">
+                                            {% for f in request.proposed_changes.feeders %}
+                                            <li>{{ f.name }}{% if f.voltage_level %} ({{ f.voltage_level }}){% endif %}</li>
+                                            {% endfor %}
+                                        </ul>
+                                    </div>
+                                    {% endif %}
+                                    {% if request.proposed_changes.consumer_types %}
+                                    <div>
+                                        <strong style="font-size:12px;text-transform:uppercase;color:var(--text-muted);">Consumer types ({{ request.proposed_changes.consumer_types|length }})</strong>
+                                        <ul class="mt-2 mb-0" style="font-size:12px;padding-left:16px;">
+                                            {% for c in request.proposed_changes.consumer_types %}
+                                            <li>{{ c.category_name }}: {{ c.consumer_count }} consumers</li>
+                                            {% endfor %}
+                                        </ul>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted mb-0"><i class="fas fa-check-circle" style="color:var(--nea-green);"></i> No pending edit requests.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Recent -->
+    <div class="card">
+        <div class="card-header">
+            <h2 style="margin:0;font-size:16px;"><i class="fas fa-history"></i> Recent Decisions</h2>
+        </div>
+        <div class="card-body">
+            {% if recent_requests %}
+            <div class="table-wrap">
+                <table class="table" style="width:100%;font-size:13px;">
+                    <thead>
+                        <tr style="background:#F7FAFC;">
+                            <th>DC</th>
+                            <th>Requested By</th>
+                            <th>Status</th>
+                            <th>Decided By</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for request in recent_requests %}
+                        <tr>
+                            <td>{{ request.dcs_detail.distribution_center.name }}</td>
+                            <td>{{ request.requested_by.full_name }}</td>
+                            <td>
+                                <span class="badge {% if request.status == 'APPROVED' %}badge-approved{% else %}badge-danger{% endif %}">
+                                    {{ request.get_status_display }}
+                                </span>
+                            </td>
+                            <td>{{ request.approved_by.full_name|default:"—" }}</td>
+                            <td>{{ request.approved_at|date:"Y-m-d H:i"|default:"—" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted mb-0">No recent approval activity.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleDetail(pk) {
+    const row = document.getElementById('detail-row-' + pk);
+    if (row) row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
+}
+function promptPassword(pk) {
+    const password = prompt('Enter your provincial approval password:');
+    if (password) {
+        document.getElementById('approvePassword' + pk).value = password;
+        document.getElementById('approvePassword' + pk).form.submit();
+    }
+}
+function promptRejection(pk) {
+    const reason = prompt('Enter rejection reason (required):');
+    if (reason && reason.trim()) {
+        document.getElementById('rejectReason' + pk).value = reason.trim();
+        document.getElementById('rejectReason' + pk).form.submit();
+    }
+}
+</script>
+{% endblock %}

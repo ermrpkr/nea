@@ -1,0 +1,734 @@
+{% extends 'nea_loss/base.html' %}
+{% load nea_filters %}
+
+{% block title %}{{ dc.name }} — DCS Profile{% endblock %}
+{% block page_title %}{{ dc.name }}{% endblock %}
+{% block breadcrumb %}DCS Profile &rsaquo; {{ dc.code }}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .dcs-site { margin: -28px -28px 0; }
+  .dcs-hero {
+    position: relative;
+    min-height: 320px;
+    background: linear-gradient(135deg, #0A1628 0%, #1B4F72 45%, #2E86AB 100%);
+    color: white;
+    overflow: hidden;
+  }
+  .dcs-hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    opacity: 0.6;
+  }
+  .dcs-hero-inner {
+    position: relative;
+    z-index: 1;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 36px 32px 28px;
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: 32px;
+    align-items: end;
+  }
+  .dcs-hero h1 {
+    font-size: clamp(28px, 4vw, 42px);
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    margin: 0 0 8px;
+    line-height: 1.15;
+  }
+  .dcs-hero-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .dcs-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.2);
+  }
+  .dcs-hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+  .dcs-btn-edit {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 22px;
+    background: white;
+    color: #1B4F72;
+    border: none;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 14px;
+    text-decoration: none;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .dcs-btn-edit:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    color: #0A1628;
+  }
+  .dcs-btn-edit.disabled {
+    opacity: 0.55;
+    pointer-events: none;
+    cursor: not-allowed;
+  }
+  .dcs-hero-photo {
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+    background: rgba(255,255,255,0.08);
+    aspect-ratio: 4/3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .dcs-hero-photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .dcs-hero-photo .placeholder {
+    text-align: center;
+    padding: 24px;
+    opacity: 0.7;
+  }
+  .dcs-hero-photo .placeholder i { font-size: 56px; margin-bottom: 8px; display: block; }
+  .dcs-nav {
+    position: sticky;
+    top: var(--topbar-h, 60px);
+    z-index: 40;
+    background: white;
+    border-bottom: 1px solid var(--border-color);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+  }
+  .dcs-nav-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 32px;
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+  }
+  .dcs-nav a {
+    padding: 14px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-decoration: none;
+    white-space: nowrap;
+    border-bottom: 3px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .dcs-nav a:hover { color: var(--nea-blue); }
+  .dcs-nav a.active { color: var(--nea-blue); border-bottom-color: var(--nea-blue-mid); }
+  .dcs-body {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 28px 32px 48px;
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: 28px;
+    align-items: start;
+  }
+  .dcs-section {
+    background: white;
+    border-radius: 14px;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+    margin-bottom: 24px;
+    overflow: hidden;
+    scroll-margin-top: 120px;
+  }
+  .dcs-section-head {
+    padding: 18px 22px;
+    border-bottom: 1px solid #F1F5F9;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .dcs-section-head h2 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--nea-blue);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .dcs-section-head .count {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: #F7FAFC;
+    padding: 4px 12px;
+    border-radius: 20px;
+  }
+  .dcs-section-body { padding: 22px; }
+  .dcs-about-text {
+    font-size: 15px;
+    line-height: 1.75;
+    color: #444;
+    margin: 0;
+  }
+  .dcs-metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 14px;
+  }
+  .dcs-metric {
+    background: linear-gradient(180deg, #F8FAFC 0%, #F1F5F9 100%);
+    border-radius: 12px;
+    padding: 18px 16px;
+    text-align: center;
+    border: 1px solid #E8EDF2;
+  }
+  .dcs-metric .num {
+    font-size: 26px;
+    font-weight: 800;
+    color: var(--nea-blue);
+    line-height: 1.2;
+  }
+  .dcs-metric .lbl {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-top: 6px;
+    font-weight: 600;
+  }
+  .dcs-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  .dcs-table th {
+    text-align: left;
+    padding: 10px 14px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text-muted);
+    background: #F8FAFC;
+    border-bottom: 1px solid var(--border-color);
+    font-weight: 600;
+  }
+  .dcs-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid #F1F5F9;
+    color: #333;
+  }
+  .dcs-table tr:last-child td { border-bottom: none; }
+  .dcs-table tr:hover td { background: #FAFCFF; }
+  .dcs-empty {
+    text-align: center;
+    padding: 36px 20px;
+    color: var(--text-muted);
+  }
+  .dcs-empty i { font-size: 40px; opacity: 0.25; margin-bottom: 12px; display: block; }
+  .dcs-empty p { margin: 0 0 14px; font-size: 14px; }
+  .dcs-team-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 16px;
+  }
+  .dcs-team-card {
+    border: 1px solid #E8EDF2;
+    border-radius: 12px;
+    padding: 18px;
+    background: #FAFCFF;
+    transition: box-shadow 0.15s;
+  }
+  .dcs-team-card:hover { box-shadow: 0 4px 16px rgba(27,79,114,0.08); }
+  .dcs-team-card .name { font-weight: 700; font-size: 16px; color: var(--nea-blue); margin-bottom: 4px; }
+  .dcs-team-card .role { font-size: 13px; color: var(--nea-blue-mid); margin-bottom: 12px; }
+  .dcs-team-card .contact { font-size: 12px; color: #666; display: flex; flex-direction: column; gap: 4px; }
+  .dcs-aside {
+    position: sticky;
+    top: calc(var(--topbar-h, 60px) + 56px);
+  }
+  .dcs-performance {
+    background: linear-gradient(160deg, #1B4F72, #2E86AB);
+    color: white;
+    border-radius: 14px;
+    padding: 22px;
+    margin-bottom: 16px;
+    box-shadow: 0 8px 24px rgba(27,79,114,0.25);
+  }
+  .dcs-performance h3 {
+    margin: 0 0 18px;
+    font-size: 15px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .dcs-perf-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.15);
+    font-size: 13px;
+  }
+  .dcs-perf-row:last-of-type { border-bottom: none; }
+  .dcs-perf-row .val { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .dcs-perf-month {
+    margin-top: 14px;
+    padding: 10px;
+    background: rgba(0,0,0,0.15);
+    border-radius: 8px;
+    text-align: center;
+    font-size: 12px;
+    opacity: 0.95;
+  }
+  .dcs-loss-big {
+    text-align: center;
+    padding: 16px 0 8px;
+  }
+  .dcs-loss-big .pct {
+    font-size: 36px;
+    font-weight: 800;
+    line-height: 1;
+  }
+  .dcs-loss-big .sub { font-size: 11px; opacity: 0.8; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .dcs-quick-card {
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    padding: 18px;
+    font-size: 13px;
+  }
+  .dcs-quick-card h4 { margin: 0 0 12px; font-size: 13px; color: var(--nea-blue); }
+  .dcs-quick-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #F1F5F9;
+  }
+  .dcs-quick-row:last-child { border-bottom: none; }
+  .dcs-alert {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 32px 0;
+  }
+  .dcs-alert .alert { border-radius: 10px; margin-bottom: 0; }
+  .dcs-status-ok { color: #6BCB77; }
+  .dcs-status-warn { color: #F39C12; }
+  .dcs-tag {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .dcs-tag-active { background: #D4EDDA; color: #155724; }
+  .dcs-tag-inactive { background: #F8D7DA; color: #721C24; }
+  @media (max-width: 992px) {
+    .dcs-hero-inner { grid-template-columns: 1fr; }
+    .dcs-hero-photo { max-height: 220px; }
+    .dcs-body { grid-template-columns: 1fr; }
+    .dcs-aside { position: static; }
+    .dcs-site { margin: -28px -16px 0; }
+    .dcs-hero-inner, .dcs-body, .dcs-nav-inner, .dcs-alert { padding-left: 16px; padding-right: 16px; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dcs-site">
+
+  <!-- Hero -->
+  <header class="dcs-hero">
+    <div class="dcs-hero-inner">
+      <div>
+        <div class="dcs-hero-meta">
+          <span class="dcs-pill"><i class="fas fa-building"></i> {{ dc.code }}</span>
+          <span class="dcs-pill"><i class="fas fa-map-marker-alt"></i> {{ dc.provincial_office.name }}</span>
+          <span class="dcs-pill"><i class="fas fa-bolt"></i> Nepal Electricity Authority</span>
+          {% if current_fiscal_year %}
+          <span class="dcs-pill"><i class="fas fa-calendar"></i> FY {{ current_fiscal_year.year_bs }}</span>
+          {% endif %}
+        </div>
+        <h1>{{ dc.name }}</h1>
+        <p style="margin:0 0 20px;opacity:0.85;font-size:15px;max-width:520px;">
+          Distribution Center profile — operational data loaded from your reports and approved DCS information.
+        </p>
+        <div class="dcs-hero-actions">
+          {% if can_edit %}
+          <a href="{% url 'dcs_detail_edit' dc.id %}" class="dcs-btn-edit">
+            <i class="fas fa-edit"></i> Edit &amp; Submit for Approval
+          </a>
+          {% endif %}
+          <a href="{% url 'dc_history' %}" style="color:rgba(255,255,255,0.9);font-size:13px;font-weight:600;text-decoration:none;">
+            <i class="fas fa-history"></i> View History
+          </a>
+        </div>
+      </div>
+      <div class="dcs-hero-photo">
+        {% if display_image %}
+        <img src="{{ display_image.url }}" alt="{{ dc.name }}">
+        {% else %}
+        <div class="placeholder">
+          <i class="fas fa-building"></i>
+          <span>No photo yet</span>
+          {% if can_edit %}<br><small style="font-size:11px;">Add via Edit</small>{% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </header>
+
+  {% if pending_edit_request and not user.is_dc_level %}
+  <div class="dcs-alert" style="padding-top:16px;">
+    <div class="alert alert-info">
+      <i class="fas fa-hourglass-half"></i>
+      Edit request from <strong>{{ pending_edit_request.requested_by.full_name }}</strong> is pending approval.
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Section nav -->
+  <nav class="dcs-nav" id="dcs-nav">
+    <div class="dcs-nav-inner">
+      <a href="#about" class="active">About</a>
+      <a href="#overview">Overview</a>
+      <a href="#team">Team</a>
+      <a href="#infrastructure">Infrastructure</a>
+      <a href="#consumers">Consumers</a>
+    </div>
+  </nav>
+
+  <div class="dcs-body">
+    <div class="dcs-main">
+
+      <!-- About -->
+      <section class="dcs-section" id="about">
+        <div class="dcs-section-head">
+          <h2><i class="fas fa-info-circle"></i> About This DCS</h2>
+        </div>
+        <div class="dcs-section-body">
+          {% if has_intro %}
+          <p class="dcs-about-text">{{ dcs_detail.introduction|linebreaks }}</p>
+          {% else %}
+          <div class="dcs-empty">
+            <i class="fas fa-align-left"></i>
+            <p>No introduction has been added for this distribution center.</p>
+            {% if can_edit %}
+            <a href="{% url 'dcs_detail_edit' dc.id %}" class="btn btn-outline btn-sm"><i class="fas fa-plus"></i> Add introduction</a>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+      </section>
+
+      <!-- Overview -->
+      <section class="dcs-section" id="overview">
+        <div class="dcs-section-head">
+          <h2><i class="fas fa-chart-pie"></i> At a Glance</h2>
+        </div>
+        <div class="dcs-section-body">
+          <div class="dcs-metrics">
+            <div class="dcs-metric">
+              <div class="num">{% if dcs_detail.established_date %}{{ dcs_detail.established_date|date:"Y" }}{% else %}—{% endif %}</div>
+              <div class="lbl">Established</div>
+            </div>
+            <div class="dcs-metric">
+              <div class="num">{% if dcs_detail.total_capacity %}{{ dcs_detail.total_capacity|floatformat:0 }}{% else %}—{% endif %}</div>
+              <div class="lbl">Capacity (kVA)</div>
+            </div>
+            <div class="dcs-metric">
+              <div class="num">{{ officials|length }}</div>
+              <div class="lbl">Officials</div>
+            </div>
+            <div class="dcs-metric">
+              <div class="num">{{ feeder_record_count }}</div>
+              <div class="lbl">Feeder Records</div>
+            </div>
+            <div class="dcs-metric">
+              <div class="num">{% if total_profile_consumers %}{{ total_profile_consumers|floatformat:0 }}{% elif total_report_consumers %}{{ total_report_consumers|floatformat:0 }}{% else %}—{% endif %}</div>
+              <div class="lbl">Consumers</div>
+            </div>
+            <div class="dcs-metric">
+              <div class="num" style="font-size:16px;line-height:1.3;">{% if dcs_detail.coverage_area %}{{ dcs_detail.coverage_area|truncatechars:12 }}{% else %}—{% endif %}</div>
+              <div class="lbl">Coverage</div>
+            </div>
+          </div>
+          {% if dcs_detail.coverage_area %}
+          <p style="margin:18px 0 0;font-size:14px;color:#555;">
+            <i class="fas fa-map" style="color:var(--nea-blue-mid);"></i>
+            <strong>Coverage area:</strong> {{ dcs_detail.coverage_area }}
+          </p>
+          {% endif %}
+        </div>
+      </section>
+
+      <!-- Team -->
+      <section class="dcs-section" id="team">
+        <div class="dcs-section-head">
+          <h2><i class="fas fa-user-tie"></i> Leadership &amp; Officials</h2>
+          <span class="count">{{ officials|length }} listed</span>
+        </div>
+        <div class="dcs-section-body">
+          {% if officials %}
+          <div class="dcs-team-grid">
+            {% for official in officials %}
+            <article class="dcs-team-card">
+              <div class="name">{{ official.name }}</div>
+              <div class="role">{{ official.designation|default:"Official" }}</div>
+              <div class="contact">
+                {% if official.phone %}<span><i class="fas fa-phone"></i> {{ official.phone }}</span>{% endif %}
+                {% if official.email %}<span><i class="fas fa-envelope"></i> {{ official.email }}</span>{% endif %}
+                {% if official.joining_date %}<span><i class="fas fa-calendar"></i> Since {{ official.joining_date }}</span>{% endif %}
+              </div>
+            </article>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="dcs-empty">
+            <i class="fas fa-users"></i>
+            <p>No officials on file. Add team members through the edit form.</p>
+            {% if can_edit %}<a href="{% url 'dcs_detail_edit' dc.id %}" class="btn btn-outline btn-sm"><i class="fas fa-user-plus"></i> Add officials</a>{% endif %}
+          </div>
+          {% endif %}
+        </div>
+      </section>
+
+      <!-- Infrastructure -->
+      <section class="dcs-section" id="infrastructure">
+        <div class="dcs-section-head">
+          <h2><i class="fas fa-plug"></i> Feeders &amp; Network</h2>
+          <span class="count">{{ feeders|length }} profile · {{ actual_feeders|length }} operational</span>
+        </div>
+        <div class="dcs-section-body" style="padding:0;">
+
+          {% if feeders %}
+          <div style="padding:16px 22px 8px;">
+            <h3 style="font-size:13px;color:var(--text-muted);margin:0 0 10px;text-transform:uppercase;letter-spacing:0.5px;">DCS profile feeders</h3>
+          </div>
+          <table class="dcs-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Code</th>
+                <th>Voltage</th>
+                <th>Length</th>
+                <th>Load</th>
+                <th>Transformers</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for feeder in feeders %}
+              <tr>
+                <td><strong>{{ feeder.name }}</strong></td>
+                <td>{{ feeder.feeder_code|default:"—" }}</td>
+                <td>{{ feeder.voltage_level|default:"—" }}</td>
+                <td>{% if feeder.length_km %}{{ feeder.length_km }} km{% else %}—{% endif %}</td>
+                <td>{% if feeder.connected_load %}{{ feeder.connected_load }} kVA{% else %}—{% endif %}</td>
+                <td>{{ feeder.transformer_count|default:"—" }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% endif %}
+
+          {% if actual_feeders %}
+          <div style="padding:16px 22px 8px;{% if feeders %}border-top:1px solid #F1F5F9;{% endif %}">
+            <h3 style="font-size:13px;color:var(--text-muted);margin:0 0 10px;text-transform:uppercase;letter-spacing:0.5px;">Operational meter points (from reports)</h3>
+          </div>
+          <table class="dcs-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Code</th>
+                <th>Connection Source</th>
+                <th>Type</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for feeder in actual_feeders %}
+              <tr>
+                <td><strong>{{ feeder.name }}</strong></td>
+                <td>{{ feeder.code|default:"—" }}</td>
+                <td>{{ feeder.connection_source|default:"—" }}</td>
+                <td>{{ feeder.get_source_type_display }}</td>
+                <td>
+                  <span class="dcs-tag {% if feeder.is_active %}dcs-tag-active{% else %}dcs-tag-inactive{% endif %}">
+                    {% if feeder.is_active %}Active{% else %}Inactive{% endif %}
+                  </span>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% endif %}
+
+          {% if not feeders and not actual_feeders %}
+          <div class="dcs-empty" style="padding:40px 22px;">
+            <i class="fas fa-plug"></i>
+            <p>No feeder data available yet.</p>
+            {% if can_edit %}<a href="{% url 'dcs_detail_edit' dc.id %}" class="btn btn-outline btn-sm"><i class="fas fa-plus"></i> Add feeder details</a>{% endif %}
+          </div>
+          {% endif %}
+        </div>
+      </section>
+
+      <!-- Consumers -->
+      <section class="dcs-section" id="consumers">
+        <div class="dcs-section-head">
+          <h2><i class="fas fa-users"></i> Consumers</h2>
+          <span class="count">Profile &amp; latest report</span>
+        </div>
+        <div class="dcs-section-body" style="padding:0;">
+
+          {% if consumer_types %}
+          <div style="padding:16px 22px 8px;">
+            <h3 style="font-size:13px;color:var(--text-muted);margin:0;text-transform:uppercase;letter-spacing:0.5px;">Profile consumer categories</h3>
+          </div>
+          <table class="dcs-table">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Count</th>
+                <th>Connected load</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for consumer in consumer_types %}
+              <tr>
+                <td><strong>{{ consumer.category_name }}</strong></td>
+                <td>{{ consumer.consumer_count|floatformat:0 }}</td>
+                <td>{{ consumer.connected_load|floatformat:2 }} kVA</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% endif %}
+
+          {% if consumer_counts %}
+          <div style="padding:16px 22px 8px;{% if consumer_types %}border-top:1px solid #F1F5F9;{% endif %}">
+            <h3 style="font-size:13px;color:var(--text-muted);margin:0;text-transform:uppercase;letter-spacing:0.5px;">
+              Latest report — {% if latest_loss_data %}{{ latest_loss_data.month_name }}{% endif %}
+            </h3>
+          </div>
+          <table class="dcs-table">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Consumers</th>
+                <th>Utilised (kWh)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in consumer_counts %}
+              <tr>
+                <td><strong>{{ row.category_name }}</strong></td>
+                <td>{{ row.consumer_count }}</td>
+                <td>{% if row.energy_kwh is not None %}{{ row.energy_kwh|floatformat:2 }}{% else %}—{% endif %}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% endif %}
+
+          {% if not consumer_types and not consumer_counts %}
+          <div class="dcs-empty" style="padding:40px 22px;">
+            <i class="fas fa-users"></i>
+            <p>No consumer breakdown on file.</p>
+            {% if can_edit %}<a href="{% url 'dcs_detail_edit' dc.id %}" class="btn btn-outline btn-sm"><i class="fas fa-plus"></i> Add consumer types</a>{% endif %}
+          </div>
+          {% endif %}
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Sidebar -->
+    <aside class="dcs-aside">
+      <div class="dcs-performance">
+        <h3><i class="fas fa-chart-line"></i> Latest Performance</h3>
+        {% if latest_loss_data and loss_pct_display is not None %}
+        <div class="dcs-loss-big">
+          <div class="pct">{{ loss_pct_display }}%</div>
+          <div class="sub">Monthly loss</div>
+        </div>
+        <div class="dcs-perf-row"><span>Received</span><span class="val">{{ latest_loss_data.net_energy_received|floatformat:0 }} kWh</span></div>
+        <div class="dcs-perf-row"><span>Utilised</span><span class="val">{{ latest_loss_data.total_energy_utilised|floatformat:0 }} kWh</span></div>
+        <div class="dcs-perf-row"><span>Loss</span><span class="val">{{ latest_loss_data.loss_unit|floatformat:0 }} kWh</span></div>
+        <div class="dcs-perf-month">
+          <i class="fas fa-calendar-alt"></i> {{ latest_loss_data.month_name }}
+          {% if current_fiscal_year %} · FY {{ current_fiscal_year.year_bs }}{% endif %}
+        </div>
+        <p style="margin:14px 0 0;font-size:11px;opacity:0.75;text-align:center;">Auto-loaded from your latest monthly report</p>
+        {% else %}
+        <div class="dcs-empty" style="padding:20px 0;color:rgba(255,255,255,0.8);">
+          <i class="fas fa-chart-bar" style="opacity:0.4;"></i>
+          <p style="color:rgba(255,255,255,0.85);">No approved monthly data yet{% if current_fiscal_year %} for FY {{ current_fiscal_year.year_bs }}{% endif %}.</p>
+        </div>
+        {% endif %}
+      </div>
+
+      {% if can_edit %}
+      <div class="dcs-quick-card" style="margin-top:12px;background:#EBF5FB;border-color:#B8DAF0;">
+        <h4><i class="fas fa-edit"></i> Update this page</h4>
+        <p style="margin:0 0 12px;color:#555;line-height:1.5;">Add photos, introduction, officials, feeders, and consumer categories. Changes go to your provincial office for approval.</p>
+        <a href="{% url 'dcs_detail_edit' dc.id %}" class="btn btn-primary btn-sm" style="width:100%;">
+          <i class="fas fa-paper-plane"></i> Edit DCS Profile
+        </a>
+      </div>
+      {% endif %}
+    </aside>
+  </div>
+
+  <footer style="max-width:1200px;margin:0 auto;padding:20px 32px 32px;text-align:center;font-size:12px;color:var(--text-muted);">
+    {{ dc.name }} · {{ dc.provincial_office.name }} · Nepal Electricity Authority Loss Analysis System
+  </footer>
+</div>
+
+<script>
+(function() {
+  const nav = document.getElementById('dcs-nav');
+  if (!nav) return;
+  const links = nav.querySelectorAll('a');
+  const sections = [...links].map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+
+  function setActive() {
+    let current = sections[0];
+    const offset = 140;
+    sections.forEach(sec => {
+      if (sec.getBoundingClientRect().top <= offset) current = sec;
+    });
+    links.forEach(a => {
+      a.classList.toggle('active', a.getAttribute('href') === '#' + current.id);
+    });
+  }
+
+  links.forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      const el = document.querySelector(a.getAttribute('href'));
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
+  window.addEventListener('scroll', setActive, { passive: true });
+  setActive();
+})();
+</script>
+{% endblock %}

@@ -29,6 +29,8 @@ class ProvincialOffice(models.Model):
     code = models.CharField(max_length=30, unique=True)
     address = models.TextField(blank=True)
     contact = models.CharField(max_length=20, blank=True)
+    # Password for approving DCS detail edits
+    edit_approval_password = models.CharField(max_length=100, blank=True, help_text='Password for approving DCS detail edit requests')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -310,6 +312,21 @@ class MeterPoint(models.Model):
     voltage_level = models.CharField(max_length=20, blank=True)
     multiplying_factor = models.DecimalField(max_digits=10, decimal_places=3, default=1)
     is_active = models.BooleanField(default=True)
+    # New field: Substation/Grid/Powerhouse connection source
+    connection_source = models.CharField(
+        max_length=200, blank=True,
+        help_text='Substation/Grid/Powerhouse from which this feeder is connected'
+    )
+    # For cross-DC energy transfer validation
+    linked_distribution_center = models.ForeignKey(
+        DistributionCenter, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='linked_meter_points',
+        help_text='For ENERGY_IMPORT: source DC. For ENERGY_EXPORT/EXPORT_DC: destination DC. Used for cross-DC validation.'
+    )
+    linked_distribution_center_name = models.CharField(
+        max_length=200, blank=True,
+        help_text='Free-text name of linked DC for cross-DC validation. Used when exact DC match is not found.'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     @property
@@ -669,6 +686,7 @@ class FeederRequest(models.Model):
     
     # Feeder details
     feeder_name = models.CharField(max_length=200, help_text='Name of the feeder')
+    connection_source = models.CharField(max_length=200, blank=True, help_text='Substation/Grid/Powerhouse from which this feeder is connected')
     source_type = models.CharField(max_length=30, choices=MeterPoint.SOURCE_TYPE_CHOICES, blank=True)
     voltage_level = models.CharField(max_length=20, blank=True)
     multiplying_factor = models.DecimalField(max_digits=10, decimal_places=3, default=1, blank=True, null=True)
@@ -703,6 +721,7 @@ class FeederRequest(models.Model):
                 source_type=self.source_type,
                 voltage_level=self.voltage_level,
                 multiplying_factor=self.multiplying_factor or 1,
+                connection_source=self.connection_source or '',
                 is_active=True,
             )
         elif self.request_type == 'DELETE' and self.meter_point:
@@ -725,3 +744,450 @@ class FeederRequest(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+
+
+# ─────────────────────────── ENERGY IMPORT DETAIL ───────────────────────────
+
+class EnergyImportDetail(models.Model):
+    """Detailed tracking of energy imports with feeder-to-feeder linking"""
+    monthly_data = models.ForeignKey(MonthlyLossData, on_delete=models.CASCADE, related_name='energy_import_details')
+    meter_point = models.ForeignKey(MeterPoint, on_delete=models.CASCADE, related_name='import_details')
+    
+    # Source feeder details
+    source_feeder_name = models.CharField(max_length=200, help_text='Name of the source feeder')
+    source_connection = models.CharField(max_length=200, blank=True, help_text='Substation/Grid/Powerhouse of source')
+    source_type = models.CharField(max_length=20, choices=MeterPoint.SOURCE_TYPE_CHOICES)
+    source_voltage = models.CharField(max_length=20, blank=True)
+    source_mf = models.DecimalField(max_digits=10, decimal_places=3, default=1)
+    
+    # Import details
+    present_reading = models.DecimalField(max_digits=15, decimal_places=3)
+    previous_reading = models.DecimalField(max_digits=15, decimal_places=3, default=0)
+    difference = models.DecimalField(max_digits=15, decimal_places=3, default=0)
+    unit_kwh = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    
+    # Linking to export (for automatic matching)
+    linked_export_detail = models.ForeignKey(
+        'EnergyExportDetail', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='linked_import_details',
+        help_text='Automatically linked export detail when this import matches an export'
+    )
+    
+    remarks = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        # Calculate difference and units
+        if self.meter_point.is_single_reading:
+            self.previous_reading = decimal.Decimal('0')
+            self.difference = self.present_reading
+        else:
+            self.difference = self.present_reading - self.previous_reading
+        self.unit_kwh = self.difference * self.source_mf
+        super().save(*args, **kwargs)
+        
+        # Auto-link to matching export detail
+        self.auto_link_export()
+
+    def auto_link_export(self):
+        """Automatically link this import to a matching export detail"""
+        from django.db.models import Q
+        
+        # Find export details in the same monthly data
+        # Match by feeder name and unit amount (allowing small tolerance)
+        exports = EnergyExportDetail.objects.filter(
+            monthly_data=self.monthly_data
+        ).exclude(
+            pk__in=[self.linked_export_detail.pk] if self.linked_export_detail else []
+        )
+        
+        # Try to find exact match by destination feeder name matching source feeder name
+        # and unit amount matching (within 0.1% tolerance)
+        tolerance = self.unit_kwh * decimal.Decimal('0.001') if self.unit_kwh > 0 else decimal.Decimal('0.01')
+        
+        for export in exports:
+            if (export.destination_feeder_name == self.source_feeder_name and
+                abs(export.unit_kwh - self.unit_kwh) <= tolerance):
+                # Found a match - link them
+                self.linked_export_detail = export
+                export.linked_import_detail = self
+                export.save(update_fields=['linked_import_detail'])
+                self.save(update_fields=['linked_export_detail'])
+                break
+
+    def __str__(self):
+        return f"{self.source_feeder_name} - {self.unit_kwh} kWh"
+
+    class Meta:
+        unique_together = ['monthly_data', 'meter_point']
+        ordering = ['source_feeder_name']
+
+
+# ─────────────────────────── ENERGY EXPORT DETAIL ───────────────────────────
+
+class EnergyExportDetail(models.Model):
+    """Detailed tracking of energy exports with feeder-to-feeder linking"""
+    monthly_data = models.ForeignKey(MonthlyLossData, on_delete=models.CASCADE, related_name='energy_export_details')
+    meter_point = models.ForeignKey(MeterPoint, on_delete=models.CASCADE, related_name='export_details')
+    
+    # Destination feeder details
+    destination_feeder_name = models.CharField(max_length=200, help_text='Name of the destination feeder')
+    destination_connection = models.CharField(max_length=200, blank=True, help_text='Substation/Grid/Powerhouse of destination')
+    destination_type = models.CharField(max_length=20, choices=MeterPoint.SOURCE_TYPE_CHOICES)
+    destination_voltage = models.CharField(max_length=20, blank=True)
+    destination_mf = models.DecimalField(max_digits=10, decimal_places=3, default=1)
+    
+    # Export details
+    present_reading = models.DecimalField(max_digits=15, decimal_places=3)
+    previous_reading = models.DecimalField(max_digits=15, decimal_places=3, default=0)
+    difference = models.DecimalField(max_digits=15, decimal_places=3, default=0)
+    unit_kwh = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    
+    # Linking to import (for automatic matching)
+    linked_import_detail = models.ForeignKey(
+        EnergyImportDetail, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='linked_export_details',
+        help_text='Automatically linked import detail when this export matches an import'
+    )
+    
+    remarks = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        # Calculate difference and units
+        if self.meter_point.is_single_reading:
+            self.previous_reading = decimal.Decimal('0')
+            self.difference = self.present_reading
+        else:
+            self.difference = self.present_reading - self.previous_reading
+        self.unit_kwh = self.difference * self.destination_mf
+        super().save(*args, **kwargs)
+        
+        # Auto-link to matching import detail
+        self.auto_link_import()
+
+    def auto_link_import(self):
+        """Automatically link this export to a matching import detail"""
+        from django.db.models import Q
+        
+        # Find import details in the same monthly data
+        # Match by feeder name and unit amount (allowing small tolerance)
+        imports = EnergyImportDetail.objects.filter(
+            monthly_data=self.monthly_data
+        ).exclude(
+            pk__in=[self.linked_import_detail.pk] if self.linked_import_detail else []
+        )
+        
+        # Try to find exact match by source feeder name matching destination feeder name
+        # and unit amount matching (within 0.1% tolerance)
+        tolerance = self.unit_kwh * decimal.Decimal('0.001') if self.unit_kwh > 0 else decimal.Decimal('0.01')
+        
+        for import_detail in imports:
+            if (import_detail.source_feeder_name == self.destination_feeder_name and
+                abs(import_detail.unit_kwh - self.unit_kwh) <= tolerance):
+                # Found a match - link them
+                self.linked_import_detail = import_detail
+                import_detail.linked_export_detail = self
+                import_detail.save(update_fields=['linked_export_detail'])
+                self.save(update_fields=['linked_import_detail'])
+                break
+
+    def __str__(self):
+        return f"{self.destination_feeder_name} - {self.unit_kwh} kWh"
+
+    class Meta:
+        unique_together = ['monthly_data', 'meter_point']
+        ordering = ['destination_feeder_name']
+
+
+# ─────────────────────────── DCS DETAIL ───────────────────────────
+
+class DCSDetail(models.Model):
+    """Detailed information about a Distribution Center"""
+    distribution_center = models.OneToOneField(DistributionCenter, on_delete=models.CASCADE, related_name='dcs_detail')
+    
+    # Basic information
+    image = models.ImageField(upload_to='dcs_images/', blank=True, null=True, help_text='Picture of the DCS')
+    introduction = models.TextField(blank=True, help_text='Introduction/description of the DCS')
+    
+    # Additional information
+    established_date = models.DateField(blank=True, null=True, help_text='Date when DCS was established')
+    coverage_area = models.TextField(blank=True, help_text='Geographical area covered by this DCS')
+    total_capacity = models.DecimalField(max_digits=15, decimal_places=2, blank=True, null=True, help_text='Total capacity in kVA')
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"{self.distribution_center.name} - Detail"
+    
+    class Meta:
+        verbose_name = 'DCS Detail'
+        verbose_name_plural = 'DCS Details'
+
+
+class DCSOfficial(models.Model):
+    """Officials working at a Distribution Center"""
+    dcs_detail = models.ForeignKey(DCSDetail, on_delete=models.CASCADE, related_name='officials')
+    
+    name = models.CharField(max_length=150)
+    designation = models.CharField(max_length=100, help_text='e.g., Chief, Deputy Chief, Engineer')
+    phone = models.CharField(max_length=20, blank=True)
+    email = models.EmailField(blank=True)
+    joining_date = models.DateField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"{self.name} - {self.designation}"
+    
+    class Meta:
+        verbose_name = 'DCS Official'
+        verbose_name_plural = 'DCS Officials'
+        ordering = ['designation', 'name']
+
+
+class DCSFeeder(models.Model):
+    """Feeder details for a Distribution Center"""
+    dcs_detail = models.ForeignKey(DCSDetail, on_delete=models.CASCADE, related_name='feeders')
+    
+    name = models.CharField(max_length=200, help_text='Name of the feeder')
+    feeder_code = models.CharField(max_length=50, blank=True)
+    voltage_level = models.CharField(max_length=20, blank=True, help_text='e.g., 11 kV, 33 kV')
+    length_km = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True, help_text='Length in kilometers')
+    connected_load = models.DecimalField(max_digits=15, decimal_places=2, blank=True, null=True, help_text='Connected load in kVA')
+    transformer_count = models.IntegerField(blank=True, null=True, help_text='Number of transformers')
+    is_active = models.BooleanField(default=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"{self.name} ({self.voltage_level})"
+    
+    class Meta:
+        verbose_name = 'DCS Feeder'
+        verbose_name_plural = 'DCS Feeders'
+        ordering = ['name']
+
+
+class DCSConsumerType(models.Model):
+    """Consumer types and counts for a Distribution Center"""
+    dcs_detail = models.ForeignKey(DCSDetail, on_delete=models.CASCADE, related_name='consumer_types')
+    
+    category_name = models.CharField(max_length=100, help_text='e.g., Domestic, Commercial, Industrial')
+    consumer_count = models.IntegerField(default=0, help_text='Number of consumers in this category')
+    connected_load = models.DecimalField(max_digits=15, decimal_places=2, default=0, help_text='Total connected load in kVA')
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"{self.category_name} - {self.consumer_count}"
+    
+    class Meta:
+        verbose_name = 'DCS Consumer Type'
+        verbose_name_plural = 'DCS Consumer Types'
+        ordering = ['category_name']
+
+
+class DCSDetailEditRequest(models.Model):
+    """Requests to edit DCS details - requires province approval"""
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('APPROVED', 'Approved'),
+        ('REJECTED', 'Rejected'),
+    ]
+    
+    dcs_detail = models.ForeignKey(DCSDetail, on_delete=models.CASCADE, related_name='edit_requests')
+    requested_by = models.ForeignKey(NEAUser, on_delete=models.CASCADE, related_name='dcs_detail_edit_requests')
+    
+    # Store the proposed changes as JSON
+    proposed_changes = models.JSONField(help_text='JSON object containing proposed changes')
+    
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    
+    # Approval fields
+    approved_by = models.ForeignKey(NEAUser, on_delete=models.SET_NULL, null=True, blank=True, 
+                                    related_name='approved_dcs_detail_edits')
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True, help_text='Reason for rejection if rejected')
+    pending_image = models.ImageField(
+        upload_to='dcs_images/pending/', blank=True, null=True,
+        help_text='Image uploaded with edit request; applied on approval',
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def approve(self, approved_by):
+        """Approve the edit request and apply changes"""
+        self.status = 'APPROVED'
+        self.approved_by = approved_by
+        self.approved_at = timezone.now()
+        
+        # Apply the proposed changes
+        changes = self.proposed_changes or {}
+        dcs_detail = self.dcs_detail
+        
+        # Update DCS Detail fields
+        if 'introduction' in changes:
+            dcs_detail.introduction = changes['introduction'] or ''
+        if 'established_date' in changes:
+            from datetime import datetime
+            val = changes['established_date']
+            if val:
+                if isinstance(val, str):
+                    try:
+                        dcs_detail.established_date = datetime.strptime(val[:10], '%Y-%m-%d').date()
+                    except ValueError:
+                        pass
+                else:
+                    dcs_detail.established_date = val
+            else:
+                dcs_detail.established_date = None
+        if 'coverage_area' in changes:
+            dcs_detail.coverage_area = changes['coverage_area'] or ''
+        if 'total_capacity' in changes:
+            cap = changes['total_capacity']
+            dcs_detail.total_capacity = decimal.Decimal(str(cap)) if cap not in (None, '') else None
+        
+        if self.pending_image:
+            import os
+            from django.core.files import File
+            img_name = os.path.basename(self.pending_image.name)
+            with self.pending_image.open('rb') as img_file:
+                dcs_detail.image.save(img_name, File(img_file), save=False)
+        
+        dcs_detail.save()
+        
+        # Handle officials updates
+        if 'officials' in changes:
+            # Delete existing officials
+            dcs_detail.officials.all().delete()
+            # Create new officials
+            for official_data in changes['officials']:
+                joining = official_data.get('joining_date')
+                if joining and isinstance(joining, str) and joining.strip():
+                    from datetime import datetime
+                    try:
+                        joining = datetime.strptime(joining[:10], '%Y-%m-%d').date()
+                    except ValueError:
+                        joining = None
+                elif not joining:
+                    joining = None
+                DCSOfficial.objects.create(
+                    dcs_detail=dcs_detail,
+                    name=official_data.get('name', ''),
+                    designation=official_data.get('designation', ''),
+                    phone=official_data.get('phone', ''),
+                    email=official_data.get('email', ''),
+                    joining_date=joining,
+                    is_active=official_data.get('is_active', True)
+                )
+        
+        # Handle feeders updates
+        if 'feeders' in changes:
+            # Delete existing feeders
+            dcs_detail.feeders.all().delete()
+            # Create new feeders
+            for feeder_data in changes['feeders']:
+                def _dec(val):
+                    if val in (None, ''):
+                        return None
+                    return decimal.Decimal(str(val))
+                DCSFeeder.objects.create(
+                    dcs_detail=dcs_detail,
+                    name=feeder_data.get('name', ''),
+                    feeder_code=feeder_data.get('feeder_code', ''),
+                    voltage_level=feeder_data.get('voltage_level', ''),
+                    length_km=_dec(feeder_data.get('length_km')),
+                    connected_load=_dec(feeder_data.get('connected_load')),
+                    transformer_count=int(feeder_data['transformer_count']) if feeder_data.get('transformer_count') not in (None, '') else None,
+                    is_active=feeder_data.get('is_active', True)
+                )
+        
+        # Handle consumer types updates
+        if 'consumer_types' in changes:
+            # Delete existing consumer types
+            dcs_detail.consumer_types.all().delete()
+            # Create new consumer types
+            for consumer_data in changes['consumer_types']:
+                load = consumer_data.get('connected_load', 0)
+                DCSConsumerType.objects.create(
+                    dcs_detail=dcs_detail,
+                    category_name=consumer_data.get('category_name', ''),
+                    consumer_count=int(consumer_data.get('consumer_count', 0) or 0),
+                    connected_load=decimal.Decimal(str(load)) if load not in (None, '') else 0
+                )
+        
+        self.save()
+    
+    def reject(self, approved_by, reason=''):
+        """Reject the edit request"""
+        self.status = 'REJECTED'
+        self.approved_by = approved_by
+        self.approved_at = timezone.now()
+        self.rejection_reason = reason
+        self.save()
+    
+    def __str__(self):
+        return f"{self.dcs_detail.distribution_center.name} - Edit Request ({self.status})"
+    
+    class Meta:
+        verbose_name = 'DCS Detail Edit Request'
+        verbose_name_plural = 'DCS Detail Edit Requests'
+        ordering = ['-created_at']
+
+
+# ─────────────────────────── HISTORY TRACKING ───────────────────────────
+
+class DCHistoryEntry(models.Model):
+    """Historical entry for DCS data tracking"""
+    distribution_center = models.ForeignKey(DistributionCenter, on_delete=models.CASCADE, related_name='history_entries')
+    fiscal_year = models.ForeignKey(FiscalYear, on_delete=models.CASCADE, related_name='history_entries')
+    month = models.PositiveSmallIntegerField(choices=NEPALI_MONTH_CHOICES)
+    
+    # Leadership information
+    dc_manager = models.ForeignKey(NEAUser, on_delete=models.SET_NULL, null=True, blank=True, 
+                                   related_name='dc_history_entries', help_text='DC Manager at the time')
+    provincial_manager = models.ForeignKey(NEAUser, on_delete=models.SET_NULL, null=True, blank=True,
+                                          related_name='provincial_history_entries', help_text='Provincial Manager at the time')
+    
+    # Data snapshot
+    total_received_kwh = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    total_utilised_kwh = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    total_loss_kwh = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    loss_percent = models.DecimalField(max_digits=7, decimal_places=4, default=0)
+    
+    # Consumer counts snapshot
+    total_consumers = models.IntegerField(default=0)
+    consumer_breakdown = models.JSONField(blank=True, null=True, help_text='JSON object with consumer category breakdown')
+    
+    # Timestamps
+    report_created_at = models.DateTimeField(help_text='When the report was created')
+    report_submitted_at = models.DateTimeField(null=True, blank=True, help_text='When the report was submitted')
+    report_approved_at = models.DateTimeField(null=True, blank=True, help_text='When the report was approved')
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def get_month_display(self):
+        month_names = {
+            1: 'Shrawan', 2: 'Bhadra', 3: 'Ashwin', 4: 'Kartik',
+            5: 'Mangsir', 6: 'Poush', 7: 'Magh', 8: 'Falgun',
+            9: 'Chaitra', 10: 'Baisakh', 11: 'Jestha', 12: 'Ashadh'
+        }
+        return month_names.get(self.month, '')
+    
+    def __str__(self):
+        return f"{self.distribution_center.name} - {self.fiscal_year.year_bs} - {self.get_month_display()}"
+    
+    class Meta:
+        verbose_name = 'DC History Entry'
+        verbose_name_plural = 'DC History Entries'
+        unique_together = ['distribution_center', 'fiscal_year', 'month']
+        ordering = ['-fiscal_year__year_ad_start', '-month', 'distribution_center__name']

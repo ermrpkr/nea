@@ -7,90 +7,96 @@
 {% block extra_head %}
 <style>
   .section-heading {
-    background: var(--nea-blue);
+    background: linear-gradient(135deg, var(--nea-blue), var(--nea-blue-mid));
     color: white;
-    padding: 10px 18px;
-    font-size: 13px;
-    font-weight: 600;
-    border-radius: 8px 8px 0 0;
+    padding: 14px 20px;
+    font-size: 14px;
+    font-weight: 700;
+    border-radius: 12px 12px 0 0;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
+    box-shadow: 0 2px 8px rgba(29,53,87,0.2);
   }
-  .meter-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .meter-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   .meter-table th {
-    background: #F7FAFC; padding: 10px 14px; font-weight: 600; font-size: 11.5px;
-    color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;
-    border-bottom: 1px solid var(--border-color); text-align: center;
+    background: linear-gradient(180deg, #F8FAFC, #F1F5F9); padding: 12px 16px; font-weight: 700; font-size: 12px;
+    color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.6px;
+    border-bottom: 2px solid var(--border-color); text-align: center;
   }
-  .meter-table td { padding: 8px 10px; border-bottom: 1px solid #F1F5F9; vertical-align: middle; }
+  .meter-table td { padding: 10px 12px; border-bottom: 1px solid #F1F5F9; vertical-align: middle; }
   .meter-table tr:last-child td { border-bottom: none; }
   .meter-table tr:hover td { background: #FAFCFF; }
   .meter-input {
-    width: 100%; padding: 7px 10px; border: 1px solid var(--border-color);
-    border-radius: 6px; font-size: 13px; text-align: right;
-    font-family: 'Inter', monospace; transition: border-color 0.15s;
+    width: 100%; padding: 8px 12px; border: 1px solid var(--border-color);
+    border-radius: 8px; font-size: 13.5px; text-align: right;
+    font-family: 'Inter', monospace; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     background: white;
   }
-  .meter-input:focus { outline: none; border-color: var(--nea-blue-mid); box-shadow: 0 0 0 3px rgba(46,134,193,0.1); }
-  .computed-cell { background: #F0F9FF; font-weight: 600; color: var(--nea-blue); padding: 7px 10px; border-radius: 5px; text-align: right; font-size: 13px; font-family: monospace; }
-  .total-row td { background: #EBF5FB; font-weight: 700; font-size: 13.5px; }
-  .mf-input { width: 80px; }
+  .meter-input:focus { outline: none; border-color: var(--nea-blue-mid); box-shadow: 0 0 0 4px rgba(69,123,157,0.15); }
+  .computed-cell { background: linear-gradient(135deg, #F0F9FF, rgba(240,249,255,0.5)); font-weight: 700; color: var(--nea-blue); padding: 8px 12px; border-radius: 8px; text-align: right; font-size: 13.5px; font-family: monospace; border: 1px solid rgba(69,123,157,0.2); }
+  .total-row td { background: linear-gradient(180deg, #EBF5FB, #E3F2FD); font-weight: 800; font-size: 14px; }
+  .mf-input { width: 90px; }
   .section-total {
-    background: var(--nea-blue-light);
-    border-radius: 8px;
-    padding: 12px 18px;
+    background: linear-gradient(135deg, var(--nea-blue-light), rgba(168,218,220,0.5));
+    border-radius: 12px;
+    padding: 14px 20px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 15px;
+    font-weight: 700;
     color: var(--nea-blue);
-    margin-top: 8px;
+    margin-top: 12px;
+    border: 1px solid rgba(69,123,157,0.2);
+    box-shadow: 0 2px 8px rgba(69,123,157,0.1);
   }
   .live-summary {
     position: sticky;
     top: 80px;
-    background: white;
-    border-radius: 12px;
+    background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(20px);
+    border-radius: 16px;
     border: 1px solid var(--border-color);
-    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
-    padding: 20px;
+    box-shadow: var(--shadow-md);
+    padding: 24px;
   }
-  .summary-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #F1F5F9; font-size: 13.5px; }
+  .summary-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #F1F5F9; font-size: 14px; }
   .summary-row:last-child { border-bottom: none; }
-  .summary-row .lbl { color: var(--text-secondary); }
-  .summary-row .val { font-weight: 600; font-family: monospace; }
+  .summary-row .lbl { color: var(--text-secondary); font-weight: 500; }
+  .summary-row .val { font-weight: 700; font-family: monospace; }
   .section-toolbar {
-    padding: 12px 18px;
-    background: #F8FAFC;
+    padding: 14px 20px;
+    background: linear-gradient(180deg, #F8FAFC, #F1F5F9);
     border-bottom: 1px solid var(--border-color);
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 12px;
     align-items: flex-end;
   }
-  .section-toolbar .tb-field { min-width: 140px; flex: 1; }
-  .section-toolbar .tb-field.narrow { flex: 0; min-width: 100px; width: 100px; }
-  .section-toolbar label { font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px; }
+  .section-toolbar .tb-field { min-width: 150px; flex: 1; }
+  .section-toolbar .tb-field.narrow { flex: 0; min-width: 110px; width: 110px; }
+  .section-toolbar label { font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 6px; font-weight: 600; }
   .btn-row-del {
     background: transparent;
     border: none;
     color: var(--text-muted);
     cursor: pointer;
-    padding: 6px;
-    border-radius: 6px;
-    font-size: 14px;
+    padding: 8px;
+    border-radius: 8px;
+    font-size: 15px;
+    transition: all 0.2s;
   }
-  .btn-row-del:hover { color: var(--nea-red); background: #FEF2F2; }
+  .btn-row-del:hover { color: var(--nea-red); background: #FEF2F2; transform: scale(1.1); }
   .read-only-banner {
-    background: #FEF9E7;
+    background: linear-gradient(135deg, #FEF9E7, rgba(254,249,231,0.8));
     border: 1px solid #F9E79F;
     color: #7D6608;
-    padding: 10px 16px;
-    border-radius: 8px;
-    font-size: 13px;
-    margin-bottom: 16px;
+    padding: 14px 20px;
+    border-radius: 12px;
+    font-size: 14px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow-sm);
   }
 </style>
 {% endblock %}
@@ -123,17 +129,36 @@
 
   {% if can_edit %}
   <div class="section-toolbar">
-    <div class="tb-field">
-      <label for="import-new-name">Meter / feeder / source name</label>
-      <input type="text" id="import-new-name" class="form-control" placeholder="e.g. 11 kV Feeder Bharma">
-    </div>
     <div class="tb-field narrow" style="min-width:180px;">
       <label for="import-new-type">Type</label>
-      <select id="import-new-type" class="form-control">
+      <select id="import-new-type" class="form-control" onchange="toggleLinkedDCField('import')">
         {% for val, label in import_type_choices %}
         <option value="{{ val }}">{{ label }}</option>
         {% endfor %}
       </select>
+    </div>
+    <div class="tb-field narrow" id="import-linked-dc-field" style="display:none;">
+      <label for="import-new-linked-dc">Source DC</label>
+      <select id="import-new-linked-dc" class="form-control" onchange="loadFeedersForDC('import')">
+        <option value="">-- Select DC --</option>
+        {% for dc in all_dcs %}
+        <option value="{{ dc.pk }}">{{ dc.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="tb-field narrow" id="import-linked-feeder-field" style="display:none;">
+      <label for="import-new-linked-feeder">Source Feeder</label>
+      <select id="import-new-linked-feeder" class="form-control">
+        <option value="">-- Select Feeder --</option>
+      </select>
+    </div>
+    <div class="tb-field">
+      <label for="import-new-name">Meter / feeder / source name</label>
+      <input type="text" id="import-new-name" class="form-control" placeholder="e.g. 11 kV Feeder Bharma">
+    </div>
+    <div class="tb-field">
+      <label for="import-new-connection">Substation/Grid/Powerhouse</label>
+      <input type="text" id="import-new-connection" class="form-control" placeholder="e.g. Bharma Substation">
     </div>
     <div class="tb-field narrow">
       <label for="import-new-mf">M.F.</label>
@@ -149,7 +174,8 @@
     <table class="meter-table" id="import-table">
       <thead>
         <tr>
-          <th style="text-align:left; width:220px;">Meter Point / Source</th>
+          <th style="text-align:left; width:200px;">Feeder Name</th>
+          <th style="text-align:left; width:180px;">Substation/Grid/Powerhouse</th>
           <th style="text-align:left; width:80px;">Type</th>
           <th>Present Reading</th>
           <th>Previous Reading</th>
@@ -165,7 +191,9 @@
         <tr data-mp="{{ mp.pk }}" data-type="import" data-single="{{ mp.is_single_reading|yesno:'1,0' }}">
           <td>
             <div style="font-weight:500;">{{ mp.name }}</div>
-            <div style="font-size:11px; color:var(--text-muted);">{{ mp.get_source_type_display }}{% if mp.voltage_level %} · {{ mp.voltage_level }}{% endif %}</div>
+          </td>
+          <td>
+            <div style="font-size:12px; color:var(--text-muted);">{{ mp.connection_source|default:"—" }}</div>
           </td>
           <td><span class="badge badge-submitted" style="font-size:10px;">{{ mp.get_source_type_display|slice:":3" }}</span></td>
           <td><input type="number" class="meter-input present-r" step="0.001" value="{{ reading.present_reading|default:'' }}" placeholder="0.000" oninput="calcRow(this)" {% if not can_edit %}disabled{% endif %}></td>
@@ -255,17 +283,36 @@
   </div>
   {% if can_edit %}
   <div class="section-toolbar" style="background:#FAF5FC;">
-    <div class="tb-field">
-      <label for="export-new-name">Export / outgoing meter name</label>
-      <input type="text" id="export-new-name" class="form-control" placeholder="e.g. Export to adjacent DC">
-    </div>
     <div class="tb-field narrow" style="min-width:180px;">
       <label for="export-new-type">Type</label>
-      <select id="export-new-type" class="form-control">
+      <select id="export-new-type" class="form-control" onchange="toggleLinkedDCField('export')">
         {% for val, label in export_type_choices %}
         <option value="{{ val }}">{{ label }}</option>
         {% endfor %}
       </select>
+    </div>
+    <div class="tb-field narrow" id="export-linked-dc-field" style="display:none;">
+      <label for="export-new-linked-dc">Destination DC</label>
+      <select id="export-new-linked-dc" class="form-control" onchange="loadFeedersForDC('export')">
+        <option value="">-- Select DC --</option>
+        {% for dc in all_dcs %}
+        <option value="{{ dc.pk }}">{{ dc.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="tb-field narrow" id="export-linked-feeder-field" style="display:none;">
+      <label for="export-new-linked-feeder">Destination Feeder</label>
+      <select id="export-new-linked-feeder" class="form-control">
+        <option value="">-- Select Feeder --</option>
+      </select>
+    </div>
+    <div class="tb-field">
+      <label for="export-new-name">Export / outgoing meter name</label>
+      <input type="text" id="export-new-name" class="form-control" placeholder="e.g. Export to adjacent DC">
+    </div>
+    <div class="tb-field">
+      <label for="export-new-connection">Substation/Grid/Powerhouse</label>
+      <input type="text" id="export-new-connection" class="form-control" placeholder="e.g. Kathmandu Substation">
     </div>
     <div class="tb-field narrow">
       <label for="export-new-mf">M.F.</label>
@@ -280,7 +327,8 @@
     <table class="meter-table" id="export-table">
       <thead>
         <tr>
-          <th style="text-align:left; width:220px;">Meter Point / Destination</th>
+          <th style="text-align:left; width:200px;">Feeder Name</th>
+          <th style="text-align:left; width:180px;">Substation/Grid/Powerhouse</th>
           <th style="text-align:left; width:80px;">Type</th>
           <th>Present Reading</th>
           <th>Previous Reading</th>
@@ -296,7 +344,9 @@
         <tr data-mp="{{ mp.pk }}" data-type="export" data-single="{{ mp.is_single_reading|yesno:'1,0' }}">
           <td>
             <div style="font-weight:500;">{{ mp.name }}</div>
-            <div style="font-size:11px; color:var(--text-muted);">{{ mp.get_source_type_display }}{% if mp.voltage_level %} · {{ mp.voltage_level }}{% endif %}</div>
+          </td>
+          <td>
+            <div style="font-size:12px; color:var(--text-muted);">{{ mp.connection_source|default:"—" }}</div>
           </td>
           <td><span class="badge badge-warning" style="font-size:10px;">EXP</span></td>
           <td><input type="number" class="meter-input present-r" step="0.001" value="{{ reading.present_reading|default:'' }}" placeholder="0.000" oninput="calcRow(this)" {% if not can_edit %}disabled{% endif %}></td>
@@ -736,29 +786,113 @@ function updateTotalCount() {
 }
 document.querySelectorAll('.count-input').forEach(inp => inp.addEventListener('change', updateTotalCount));
 
+function toggleLinkedDCField(section) {
+  const pre = section === 'export' ? 'export' : 'import';
+  const typeEl = document.getElementById(pre + '-new-type');
+  const linkedDcField = document.getElementById(pre + '-linked-dc-field');
+  const linkedFeederField = document.getElementById(pre + '-linked-feeder-field');
+  
+  // Show linked DC field only for ENERGY_IMPORT, ENERGY_EXPORT, and EXPORT_DC
+  const crossDCTypes = ['ENERGY_IMPORT', 'ENERGY_EXPORT', 'EXPORT_DC'];
+  if (crossDCTypes.includes(typeEl.value)) {
+    linkedDcField.style.display = 'block';
+  } else {
+    linkedDcField.style.display = 'none';
+    linkedFeederField.style.display = 'none';
+    document.getElementById(pre + '-new-linked-dc').value = '';
+    document.getElementById(pre + '-new-linked-feeder').innerHTML = '<option value="">-- Select Feeder --</option>';
+  }
+}
+
+async function loadFeedersForDC(section) {
+  const pre = section === 'export' ? 'export' : 'import';
+  const dcSelect = document.getElementById(pre + '-new-linked-dc');
+  const feederSelect = document.getElementById(pre + '-new-linked-feeder');
+  const feederField = document.getElementById(pre + '-linked-feeder-field');
+  const dcId = dcSelect.value;
+  
+  // Reset feeder dropdown
+  feederSelect.innerHTML = '<option value="">-- Select Feeder --</option>';
+  
+  if (!dcId) {
+    feederField.style.display = 'none';
+    return;
+  }
+  
+  try {
+    const response = await fetch(`/api/dc-feeders/?dc_id=${dcId}&report_pk=${reportPk}`);
+    const data = await response.json();
+    
+    if (data.success && data.feeders.length > 0) {
+      feederField.style.display = 'block';
+      data.feeders.forEach(feeder => {
+        const option = document.createElement('option');
+        option.value = feeder.name;
+        option.textContent = feeder.name;
+        feederSelect.appendChild(option);
+      });
+    } else {
+      feederField.style.display = 'none';
+      if (data.error) {
+        alert(data.error);
+      }
+    }
+  } catch (error) {
+    console.error('Error loading feeders:', error);
+    feederField.style.display = 'none';
+  }
+}
+
 async function addMeterPoint(section) {
   if (!canEdit) return;
   const pre = section === 'export' ? 'export' : 'import';
   const name = document.getElementById(pre + '-new-name').value.trim();
+  const connection = document.getElementById(pre + '-new-connection').value.trim() || '';
   const typeEl = document.getElementById(pre + '-new-type');
   const mf = document.getElementById(pre + '-new-mf').value || '1';
-  if (!name) {
-    alert('Enter a name for the new meter line.');
+  const linkedDcSelect = document.getElementById(pre + '-new-linked-dc');
+  const linkedFeederSelect = document.getElementById(pre + '-new-linked-feeder');
+  
+  // If feeder is selected, use it as the name
+  const selectedFeeder = linkedFeederSelect.value;
+  const finalName = selectedFeeder || name;
+  
+  const linkedDcName = linkedDcSelect.options[linkedDcSelect.selectedIndex]?.text || '';
+  
+  if (!finalName) {
+    alert('Enter a name for the new meter line or select a feeder from the dropdown.');
     return;
   }
+  
+  // Validate linked DC is entered for cross-DC types
+  const crossDCTypes = ['ENERGY_IMPORT', 'ENERGY_EXPORT', 'EXPORT_DC'];
+  if (crossDCTypes.includes(typeEl.value) && !linkedDcName) {
+    alert('Please select the linked Distribution Center for cross-DC energy transfer.');
+    return;
+  }
+  
   try {
     const ok = await saveAllData();
     if (!ok) return;
+    const payload = {
+      name: finalName,
+      connection_source: connection,
+      source_type: typeEl.value,
+      multiplying_factor: parseFloat(mf) || 1,
+      action: 'create',
+      report_pk: reportPk,
+    };
+    if (linkedDcName) {
+      payload.linked_distribution_center_name = linkedDcName;
+    }
+    if (selectedFeeder) {
+      payload.auto_create_linked = true;  // Flag to auto-create corresponding record
+    }
+    
     const r = await fetch(manageMeterUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
-      body: JSON.stringify({
-        action: 'create',
-        report_pk: reportPk,
-        name: name,
-        source_type: typeEl.value,
-        multiplying_factor: parseFloat(mf) || 1,
-      }),
+      body: JSON.stringify(payload),
     });
     const d = await r.json();
     if (!d.success) throw new Error(d.error || 'Request failed');

@@ -1,0 +1,34 @@
+<table class="history-table">
+    <thead>
+        <tr>
+            {% if show_dc_column %}<th>DC</th>{% endif %}
+            <th>Month</th>
+            <th class="text-right">Received (kWh)</th>
+            <th class="text-right">Utilised (kWh)</th>
+            <th class="text-right">Loss (kWh)</th>
+            <th class="text-right">Loss %</th>
+            <th>Approved</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for entry in entries %}
+        <tr>
+            {% if show_dc_column %}
+            <td><strong>{{ entry.distribution_center.name }}</strong></td>
+            {% endif %}
+            <td><span class="badge badge-draft">{{ entry.get_month_display }}</span></td>
+            <td class="text-right" style="font-variant-numeric:tabular-nums;">{{ entry.total_received_kwh|floatformat:2 }}</td>
+            <td class="text-right" style="font-variant-numeric:tabular-nums;">{{ entry.total_utilised_kwh|floatformat:2 }}</td>
+            <td class="text-right" style="font-variant-numeric:tabular-nums;color:var(--nea-red);">{{ entry.total_loss_kwh|floatformat:2 }}</td>
+            <td class="text-right">
+                <span class="badge {% if entry.loss_percent > 15 %}badge-danger{% elif entry.loss_percent > 10 %}badge-warning{% else %}badge-approved{% endif %}">
+                    {{ entry.loss_percent|floatformat:2 }}%
+                </span>
+            </td>
+            <td style="font-size:12px;color:var(--text-muted);">
+                {{ entry.report_approved_at|date:"Y-m-d"|default:entry.report_created_at|date:"Y-m-d" }}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
