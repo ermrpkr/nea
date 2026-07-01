@@ -5,15 +5,22 @@ import django.db.models.deletion
 
 
 def create_message_model_if_not_exists(apps, schema_editor):
-    # Check if the table already exists
+    # Check if the table already exists (works for both SQLite and PostgreSQL)
     with connection.cursor() as cursor:
-        cursor.execute("""
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_name = 'nea_loss_message'
-            );
-        """)
-        table_exists = cursor.fetchone()[0]
+        if schema_editor.connection.vendor == 'postgresql':
+            cursor.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'nea_loss_message'
+                );
+            """)
+        else:  # SQLite
+            cursor.execute("""
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='nea_loss_message';
+            """)
+        result = cursor.fetchone()
+        table_exists = bool(result and result[0])
     
     if not table_exists:
         # Only create the model if table doesn't exist
