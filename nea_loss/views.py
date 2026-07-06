@@ -28,7 +28,7 @@ from .models import (
     DistributionCenter, ProvincialOffice, Province, Notification, AuditLog,
     ProvincialReport, MonthlyMeterPointStatus, DCYearlyTarget, DCMonthlyTarget, Message,
     DCReportOverride, FeederRequest, DCSDetail, DCSOfficial, DCSFeeder, DCSConsumerType,
-    DCSDetailEditRequest, DCHistoryEntry,
+    DCSDetailEditRequest, DCHistoryEntry, FeederFile,
 )
 
 
@@ -1455,6 +1455,241 @@ class ReportPrintView(LoginRequiredMixin, View):
             'report': report,
             'monthly_data': monthly_data,
         })
+
+
+# ─────────────────────────── FEEDER FILE UPLOADS ───────────────────────────
+
+class FeederFileUploadView(LoginRequiredMixin, View):
+    """DCS users can upload feeder files for their monthly reports"""
+    template_name = 'nea_loss/reports/feeder_file_upload.html'
+
+    def get(self, request, report_pk):
+        report = get_object_or_404(LossReport, pk=report_pk)
+        # Check if user can edit this report
+        if not _can_edit_report(request.user, report):
+            messages.error(request, 'You do not have permission to upload files for this report.')
+            return redirect('report_detail', pk=report_pk)
+        
+        existing_files = report.feeder_files.all()
+        return render(request, self.template_name, {
+            'report': report,
+            'existing_files': existing_files,
+        })
+
+    def post(self, request, report_pk):
+        report = get_object_or_404(LossReport, pk=report_pk)
+        if not _can_edit_report(request.user, report):
+            messages.error(request, 'You do not have permission to upload files for this report.')
+            return redirect('report_detail', pk=report_pk)
+        
+        feeder_name = request.POST.get('feeder_name', '').strip()
+        file_type = request.POST.get('file_type', 'OTHER')
+        description = request.POST.get('description', '').strip()
+        uploaded_file = request.FILES.get('file')
+        
+        if not feeder_name or not uploaded_file:
+            messages.error(request, 'Feeder name and file are required.')
+            return redirect('feeder_file_upload', report_pk=report_pk)
+        
+        # Auto-detect file type if not specified
+        if file_type == 'OTHER':
+            file_ext = uploaded_file.name.split('.')[-1].lower()
+            if file_ext == 'pdf':
+                file_type = 'PDF'
+            elif file_ext in ['doc', 'docx']:
+                file_type = 'WORD'
+            elif file_ext in ['xls', 'xlsx']:
+                file_type = 'EXCEL'
+            elif file_ext in ['jpg', 'jpeg', 'png', 'gif']:
+                file_type = 'IMAGE'
+        
+        FeederFile.objects.create(
+            report=report,
+            feeder_name=feeder_name,
+            file=uploaded_file,
+            file_type=file_type,
+            description=description,
+            uploaded_by=request.user
+        )
+        
+        # Log the action
+        AuditLog.objects.create(
+            user=request.user,
+            action='UPLOAD',
+            model_name='FeederFile',
+            object_id=None,
+            description=f'Uploaded feeder file "{feeder_name}" for report {report}',
+            ip_address=request.META.get('REMOTE_ADDR', '')
+        )
+        
+        messages.success(request, f'File "{feeder_name}" uploaded successfully.')
+        return redirect('feeder_file_upload', report_pk=report_pk)
+
+
+class FeederFileDeleteView(LoginRequiredMixin, View):
+    """Delete a feeder file"""
+    
+    def post(self, request, file_pk):
+        file_obj = get_object_or_404(FeederFile, pk=file_pk)
+        report = file_obj.report
+        
+        # Check if user can edit this report
+        if not _can_edit_report(request.user, report):
+            messages.error(request, 'You do not have permission to delete this file.')
+            return redirect('report_detail', pk=report.pk)
+        
+        feeder_name = file_obj.feeder_name
+        file_obj.delete()
+        
+        # Log the action
+        AuditLog.objects.create(
+            user=request.user,
+            action='DELETE',
+            model_name='FeederFile',
+            object_id=str(file_pk),
+            description=f'Deleted feeder file "{feeder_name}" from report {report}',
+            ip_address=request.META.get('REMOTE_ADDR', '')
+        )
+        
+        messages.success(request, f'File "{feeder_name}" deleted successfully.')
+        return redirect('feeder_file_upload', report_pk=report.pk)
+
+
+class FeederFileView(LoginRequiredMixin, View):
+    """View a feeder file - accessible to higher authorities"""
+    
+    def get(self, request, pk):
+        file_obj = get_object_or_404(FeederFile, pk=pk)
+        
+        # Check if user can view this file (DCS user who uploaded it or higher authority)
+        can_view = (
+            request.user == file_obj.uploaded_by or
+            request.user.is_provincial or
+            request.user.is_top_management or
+            getattr(request.user, 'is_system_admin', False)
+        )
+        
+        if not can_view:
+            messages.error(request, 'You do not have permission to view this file.')
+            return redirect('dashboard')
+        
+        # Serve the file
+        from django.http import FileResponse
+        import os
+        
+        if file_obj.file and os.path.exists(file_obj.file.path):
+            return FileResponse(open(file_obj.file.path, 'rb'), as_attachment=True, filename=file_obj.get_filename())
+        else:
+            messages.error(request, 'File not found.')
+            return redirect('report_detail', pk=file_obj.report.pk)
+
+
+# ─────────────────────────── FEEDER FILE API ───────────────────────────
+
+@login_required
+def api_feeder_file_upload(request):
+    """API endpoint for uploading feeder files via AJAX"""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Only POST method allowed'})
+    
+    report_pk = request.POST.get('report_pk')
+    feeder_name = request.POST.get('feeder_name', '').strip()
+    file_type = request.POST.get('file_type', 'OTHER')
+    description = request.POST.get('description', '').strip()
+    uploaded_file = request.FILES.get('file')
+    
+    if not report_pk or not feeder_name or not uploaded_file:
+        return JsonResponse({'success': False, 'error': 'Missing required fields'})
+    
+    try:
+        report = get_object_or_404(LossReport, pk=report_pk)
+        
+        # Check if user can edit this report
+        if not _can_edit_report(request.user, report):
+            return JsonResponse({'success': False, 'error': 'Permission denied'})
+        
+        # Auto-detect file type if not specified
+        if file_type == 'OTHER':
+            file_ext = uploaded_file.name.split('.')[-1].lower()
+            if file_ext == 'pdf':
+                file_type = 'PDF'
+            elif file_ext in ['doc', 'docx']:
+                file_type = 'WORD'
+            elif file_ext in ['xls', 'xlsx']:
+                file_type = 'EXCEL'
+            elif file_ext in ['jpg', 'jpeg', 'png', 'gif']:
+                file_type = 'IMAGE'
+        
+        file_obj = FeederFile.objects.create(
+            report=report,
+            feeder_name=feeder_name,
+            file=uploaded_file,
+            file_type=file_type,
+            description=description,
+            uploaded_by=request.user
+        )
+        
+        # Log the action
+        AuditLog.objects.create(
+            user=request.user,
+            action='UPLOAD',
+            model_name='FeederFile',
+            object_id=None,
+            description=f'Uploaded feeder file "{feeder_name}" for report {report}',
+            ip_address=request.META.get('REMOTE_ADDR', '')
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'file': {
+                'id': file_obj.pk,
+                'feeder_name': file_obj.feeder_name,
+                'filename': file_obj.get_filename(),
+                'file_type': file_obj.file_type
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+@login_required
+def api_pending_reports(request):
+    """API endpoint to get pending reports for provincial review"""
+    if not request.user.is_provincial:
+        return JsonResponse({'success': False, 'error': 'Permission denied'})
+    
+    try:
+        active_fy = FiscalYear.objects.filter(is_active=True).first()
+        if not active_fy:
+            return JsonResponse({'success': False, 'error': 'No active fiscal year'})
+        
+        po = request.user.provincial_office
+        if not po:
+            return JsonResponse({'success': False, 'error': 'No provincial office assigned'})
+        
+        pending_reports = LossReport.objects.filter(
+            distribution_center__provincial_office=po,
+            fiscal_year=active_fy,
+            status__in=['SUBMITTED', 'PROVINCIAL_REVIEWED']
+        ).select_related('distribution_center').order_by('-updated_at')
+        
+        reports_data = []
+        for report in pending_reports:
+            reports_data.append({
+                'id': report.pk,
+                'dc_name': report.distribution_center.name,
+                'month': report.get_month_display(),
+                'status': report.get_status_display(),
+                'updated_at': report.updated_at.strftime('%Y-%m-%d %H:%M')
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'reports': reports_data,
+            'count': len(reports_data)
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
 
 
 # ─────────────────────────── REPORT ACTIONS ───────────────────────────

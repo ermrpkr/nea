@@ -1191,3 +1191,36 @@ class DCHistoryEntry(models.Model):
         verbose_name_plural = 'DC History Entries'
         unique_together = ['distribution_center', 'fiscal_year', 'month']
         ordering = ['-fiscal_year__year_ad_start', '-month', 'distribution_center__name']
+
+
+# ─────────────────────────── FEEDER FILE UPLOADS ───────────────────────────
+
+class FeederFile(models.Model):
+    """Files uploaded by DCS from feeders (PDF, Word, Excel, etc.)"""
+    FILE_TYPE_CHOICES = [
+        ('PDF', 'PDF'),
+        ('WORD', 'Word Document'),
+        ('EXCEL', 'Excel Spreadsheet'),
+        ('IMAGE', 'Image'),
+        ('OTHER', 'Other'),
+    ]
+    
+    report = models.ForeignKey(LossReport, on_delete=models.CASCADE, related_name='feeder_files')
+    feeder_name = models.CharField(max_length=200, help_text='Name of the feeder')
+    file = models.FileField(upload_to='feeder_files/%Y/%m/', help_text='Upload feeder file (PDF, Word, Excel)')
+    file_type = models.CharField(max_length=10, choices=FILE_TYPE_CHOICES, default='OTHER')
+    description = models.TextField(blank=True, help_text='Description of the file content')
+    
+    uploaded_by = models.ForeignKey(NEAUser, on_delete=models.SET_NULL, null=True, related_name='uploaded_feeder_files')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"{self.feeder_name} - {self.report.get_month_display()} ({self.file_type})"
+    
+    def get_filename(self):
+        return self.file.name.split('/')[-1] if self.file else ''
+    
+    class Meta:
+        ordering = ['-uploaded_at']
+        verbose_name = 'Feeder File'
+        verbose_name_plural = 'Feeder Files'

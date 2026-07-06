@@ -28,6 +28,9 @@
       {% if report.status == 'APPROVED' %}<i class="fas fa-user-shield"></i> Edit (Admin Correction)
       {% else %}<i class="fas fa-edit"></i> Enter Data{% endif %}
     </a>
+    <a href="{% url 'feeder_file_upload' report.pk %}" class="btn btn-outline" style="background:rgba(255,255,255,0.1); border-color:rgba(255,255,255,0.2); color:white;">
+      <i class="fas fa-file-upload"></i> Feeder Files
+    </a>
     {% elif report.status == 'SUBMITTED' or report.status == 'APPROVED' %}
     <a href="{% url 'monthly_data' report.pk report.month %}" class="btn btn-outline" style="background:rgba(255,255,255,0.1); border-color:rgba(255,255,255,0.2); color:white;">
       <i class="fas fa-eye"></i> View Data
@@ -113,6 +116,55 @@
 <div class="card mb-24">
   <div class="card-header"><h2><i class="fas fa-comment-alt" style="margin-right:8px;"></i>Remarks / Notes</h2></div>
   <div class="card-body" style="font-size:14px; color:var(--text-secondary);">{{ report.remarks }}</div>
+</div>
+{% endif %}
+
+<!-- Feeder Files -->
+{% if report.feeder_files.exists %}
+<div class="card mb-24">
+  <div class="card-header">
+    <h2><i class="fas fa-folder-open" style="margin-right:8px;"></i>Feeder Files ({{ report.feeder_files.count }})</h2>
+  </div>
+  <div class="card-body">
+    <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:16px;">
+      {% for file in report.feeder_files.all %}
+      <div style="padding:16px; background:#f8f9fa; border-radius:10px; border:1px solid #e9ecef;">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+          <div style="width:48px; height:48px; background:#e3f2fd; border-radius:8px; display:flex; align-items:center; justify-content:center;">
+            <i class="fas fa-file" style="color:#1976d2; font-size:22px;"></i>
+          </div>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:14px; color:#2c3e50; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+              {{ file.feeder_name }}
+            </div>
+            <div style="font-size:12px; color:#7f8c8d; margin-top:2px;">
+              {{ file.file_type }}
+            </div>
+          </div>
+        </div>
+        <div style="font-size:12px; color:#7f8c8d; margin-bottom:4px;">
+          <i class="fas fa-file-alt"></i> {{ file.get_filename }}
+        </div>
+        {% if file.description %}
+        <div style="font-size:12px; color:#95a5a6; margin-bottom:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+          {{ file.description }}
+        </div>
+        {% endif %}
+        <div style="display:flex; gap:8px;">
+          <a href="{% url 'feeder_file_view' file.pk %}" 
+             class="btn btn-sm btn-primary" 
+             style="flex:1; text-align:center; padding:8px; font-size:12px;"
+             target="_blank">
+            <i class="fas fa-eye"></i> View
+          </a>
+        </div>
+        <div style="font-size:11px; color:#95a5a6; margin-top:8px; text-align:right;">
+          Uploaded: {{ file.uploaded_at|date:"M d, Y" }}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
 </div>
 {% endif %}
 

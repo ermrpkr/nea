@@ -568,6 +568,98 @@
   </div>
 </div>
 
+<!-- Feeder Files Section -->
+{% if can_edit %}
+<div class="card" style="margin-bottom:24px;">
+  <div class="section-heading">
+    <i class="fas fa-folder-open"></i> Feeder Files
+    <span style="margin-left:auto; font-size:12px; opacity:0.8;">Upload files from feeders (PDF, Word, Excel, Images)</span>
+  </div>
+  <div class="card-body" style="padding:20px;">
+    <!-- Upload Form -->
+    <form id="feeder-file-form" method="post" enctype="multipart/form-data" style="display:flex; gap:12px; align-items:flex-end; margin-bottom:16px; flex-wrap:wrap;">
+      {% csrf_token %}
+      <input type="hidden" name="report_pk" value="{{ report.pk }}">
+      
+      <div style="flex:1; min-width:200px;">
+        <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px; color:var(--text-secondary);">Feeder Name *</label>
+        <input type="text" name="feeder_name" required 
+               style="width:100%; padding:8px 12px; border:1px solid var(--border-color); border-radius:6px; font-size:13px;"
+               placeholder="Enter feeder name">
+      </div>
+      
+      <div style="flex:1; min-width:200px;">
+        <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px; color:var(--text-secondary);">File *</label>
+        <input type="file" name="file" required 
+               style="width:100%; padding:6px; border:1px solid var(--border-color); border-radius:6px; font-size:12px;"
+               accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif">
+      </div>
+      
+      <div style="width:150px;">
+        <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px; color:var(--text-secondary);">File Type</label>
+        <select name="file_type" 
+                style="width:100%; padding:8px 12px; border:1px solid var(--border-color); border-radius:6px; font-size:13px;">
+          <option value="OTHER">Auto-detect</option>
+          <option value="PDF">PDF</option>
+          <option value="WORD">Word</option>
+          <option value="EXCEL">Excel</option>
+          <option value="IMAGE">Image</option>
+        </select>
+      </div>
+      
+      <div style="flex:2; min-width:250px;">
+        <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px; color:var(--text-secondary);">Description</label>
+        <input type="text" name="description"
+               style="width:100%; padding:8px 12px; border:1px solid var(--border-color); border-radius:6px; font-size:13px;"
+               placeholder="Optional description">
+      </div>
+      
+      <button type="submit" class="btn btn-primary" style="padding:8px 16px;">
+        <i class="fas fa-upload"></i> Upload
+      </button>
+    </form>
+    
+    <!-- Existing Files -->
+    <div id="feeder-files-list">
+      {% for file in report.feeder_files.all %}
+      <div style="display:flex; align-items:center; justify-content:space-between; padding:12px; background:#f8f9fa; border-radius:8px; border:1px solid #e9ecef; margin-bottom:8px;">
+        <div style="display:flex; align-items:center; gap:12px; flex:1; min-width:0;">
+          <div style="width:36px; height:36px; background:#e3f2fd; border-radius:6px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+            <i class="fas fa-file" style="color:#1976d2; font-size:16px;"></i>
+          </div>
+          <div style="min-width:0; flex:1;">
+            <div style="font-weight:600; font-size:13px; color:#2c3e50; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+              {{ file.feeder_name }}
+            </div>
+            <div style="font-size:11px; color:#7f8c8d;">
+              {{ file.get_filename }} &nbsp;|&nbsp; {{ file.file_type }}
+            </div>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; flex-shrink:0;">
+          <a href="{% url 'feeder_file_view' file.pk %}" 
+             class="btn btn-sm btn-outline" 
+             style="padding:6px 10px; font-size:11px;"
+             target="_blank">
+            <i class="fas fa-eye"></i> View
+          </a>
+          <button onclick="deleteFeederFile({{ file.pk }})" class="btn btn-sm btn-danger" 
+                  style="padding:6px 10px; font-size:11px;">
+            <i class="fas fa-trash"></i>
+          </button>
+        </div>
+      </div>
+      {% empty %}
+      <div style="text-align:center; padding:20px; color:#95a5a6; font-size:13px;">
+        <i class="fas fa-folder-open" style="font-size:32px; margin-bottom:8px; opacity:0.3;"></i>
+        <div>No files uploaded yet</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <!-- Save Buttons -->
 <div style="display:flex; gap:12px; justify-content:flex-end; padding:20px 0; border-top:1px solid var(--border-color);">
   <a href="{% url 'report_list' %}" class="btn btn-outline" onclick="return confirmDeleteEmptyReport();"><i class="fas fa-arrow-left"></i> Back to Reports</a>
@@ -1215,6 +1307,113 @@ async function submitReportFromData() {
   form.submit();
 
   return true;
+}
+
+// Feeder File Upload
+document.getElementById('feeder-file-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const form = this;
+  const formData = new FormData(form);
+  const submitBtn = form.querySelector('button[type="submit"]');
+  
+  submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+  submitBtn.disabled = true;
+  
+  try {
+    const response = await fetch('/api/feeder-file-upload/', {
+      method: 'POST',
+      body: formData
+    });
+    const data = await response.json();
+    
+    if (data.success) {
+      // Add new file to list
+      const fileList = document.getElementById('feeder-files-list');
+      const emptyMsg = fileList.querySelector('div[style*="text-align:center"]');
+      if (emptyMsg) emptyMsg.remove();
+      
+      const fileHtml = `
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:12px; background:#f8f9fa; border-radius:8px; border:1px solid #e9ecef; margin-bottom:8px;">
+          <div style="display:flex; align-items:center; gap:12px; flex:1; min-width:0;">
+            <div style="width:36px; height:36px; background:#e3f2fd; border-radius:6px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+              <i class="fas fa-file" style="color:#1976d2; font-size:16px;"></i>
+            </div>
+            <div style="min-width:0; flex:1;">
+              <div style="font-weight:600; font-size:13px; color:#2c3e50; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                ${data.file.feeder_name}
+              </div>
+              <div style="font-size:11px; color:#7f8c8d;">
+                ${data.file.filename} &nbsp;|&nbsp; ${data.file.file_type}
+              </div>
+            </div>
+          </div>
+          <div style="display:flex; gap:8px; flex-shrink:0;">
+            <a href="/feeder-files/${data.file.id}/view/" 
+               class="btn btn-sm btn-outline" 
+               style="padding:6px 10px; font-size:11px;"
+               target="_blank">
+              <i class="fas fa-eye"></i> View
+            </a>
+            <button onclick="deleteFeederFile(${data.file.id})" class="btn btn-sm btn-danger" 
+                    style="padding:6px 10px; font-size:11px;">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+        </div>
+      `;
+      fileList.insertAdjacentHTML('afterbegin', fileHtml);
+      
+      // Reset form
+      form.reset();
+      submitBtn.innerHTML = '<i class="fas fa-upload"></i> Upload';
+      submitBtn.disabled = false;
+    } else {
+      alert('Error: ' + (data.error || 'Failed to upload file'));
+      submitBtn.innerHTML = '<i class="fas fa-upload"></i> Upload';
+      submitBtn.disabled = false;
+    }
+  } catch (err) {
+    alert('Error: ' + err.message);
+    submitBtn.innerHTML = '<i class="fas fa-upload"></i> Upload';
+    submitBtn.disabled = false;
+  }
+});
+
+// Delete Feeder File
+async function deleteFeederFile(fileId) {
+  if (!confirm('Are you sure you want to delete this file?')) return;
+  
+  try {
+    const response = await fetch(`/feeder-files/${fileId}/delete/`, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': csrfToken }
+    });
+    
+    if (response.ok) {
+      // Remove file from DOM
+      const fileElements = document.querySelectorAll('#feeder-files-list > div');
+      fileElements.forEach(el => {
+        if (el.innerHTML.includes(`deleteFeederFile(${fileId})`)) {
+          el.remove();
+        }
+      });
+      
+      // Show empty message if no files left
+      const fileList = document.getElementById('feeder-files-list');
+      if (fileList.children.length === 0) {
+        fileList.innerHTML = `
+          <div style="text-align:center; padding:20px; color:#95a5a6; font-size:13px;">
+            <i class="fas fa-folder-open" style="font-size:32px; margin-bottom:8px; opacity:0.3;"></i>
+            <div>No files uploaded yet</div>
+          </div>
+        `;
+      }
+    } else {
+      alert('Failed to delete file');
+    }
+  } catch (err) {
+    alert('Error: ' + err.message);
+  }
 }
 </script>
 {% endblock %}

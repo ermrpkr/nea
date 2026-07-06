@@ -17,6 +17,7 @@ from .models import (
     ConsumerCategory, EnergyUtilisation, ConsumerCount,
     AuditLog, Notification, ProvincialReport, DCMonthlyTarget, DCYearlyTarget,
     MonthlyMeterPointStatus, DCReportOverride, EnergyImportDetail, EnergyExportDetail,
+    FeederFile,
 )
 
 # ── Site branding ──────────────────────────────────────────────────────────────
@@ -782,3 +783,26 @@ class EnergyExportDetailAdmin(admin.ModelAdmin):
     fields = ('monthly_data', 'meter_point', 'destination_feeder_name', 'destination_connection', 'destination_type',
               'destination_voltage', 'destination_mf', 'present_reading', 'previous_reading', 'difference',
               'unit_kwh', 'linked_import_detail', 'remarks', 'created_at', 'updated_at')
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  FEEDER FILES
+# ══════════════════════════════════════════════════════════════════════════════
+@admin.register(FeederFile)
+class FeederFileAdmin(admin.ModelAdmin):
+    list_display = ['feeder_name', 'report', 'file_type', 'uploaded_by', 'uploaded_at', 'file_link']
+    list_filter = ['file_type', 'uploaded_at', 'report__fiscal_year', 'report__month']
+    search_fields = ['feeder_name', 'description']
+    readonly_fields = ['uploaded_at', 'file_link']
+    fields = ('report', 'feeder_name', 'file', 'file_type', 'description', 'uploaded_by', 'uploaded_at', 'file_link')
+    
+    def file_link(self, obj):
+        if obj.file:
+            return format_html('<a href="{}" target="_blank">View File</a>', obj.file.url)
+        return 'No file'
+    file_link.short_description = 'File'
+    
+    def save_model(self, request, obj, form, change):
+        if not change:
+            obj.uploaded_by = request.user
+        super().save_model(request, obj, form, change)

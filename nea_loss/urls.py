@@ -24,6 +24,13 @@ urlpatterns = [
     path('reports/<int:pk>/print/', views.ReportPrintView.as_view(), name='report_print'),
     path('reports/<int:pk>/export-excel/', views.report_export_excel, name='report_export_excel'),
 
+    # Feeder File Uploads
+    path('reports/<int:report_pk>/feeder-files/', views.FeederFileUploadView.as_view(), name='feeder_file_upload'),
+    path('feeder-files/<int:pk>/delete/', views.FeederFileDeleteView.as_view(), name='feeder_file_delete'),
+    path('feeder-files/<int:pk>/view/', views.FeederFileView.as_view(), name='feeder_file_view'),
+    path('api/feeder-file-upload/', views.api_feeder_file_upload, name='api_feeder_file_upload'),
+    path('api/pending-reports/', views.api_pending_reports, name='api_pending_reports'),
+
     # Monthly Data Entry
     path('reports/<int:report_pk>/months/<int:month>/', views.MonthlyDataView.as_view(), name='monthly_data'),
     path('reports/<int:report_pk>/months/<int:month>/delete/', views.monthly_data_delete, name='monthly_data_delete'),
